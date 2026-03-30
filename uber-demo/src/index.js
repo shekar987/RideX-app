@@ -10,3 +10,13 @@ root.render(
     <App />
   </AuthProvider>
 );
+
+// Register service worker in production only.
+// The SW file is served from /sw.js (public/ directory).
+if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {
+            // SW registration failure is non-fatal; the app works without it.
+        });
+    });
+}

@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCJKmF7ikPFx2VkOSontyvdCaCMnwlqY6U",
-    authDomain: "uber-app-9ecf7.firebaseapp.com",
-    projectId: "uber-app-9ecf7",
-    storageBucket: "uber-app-9ecf7.firebasestorage.app",
-    messagingSenderId: "579912198595",
-    appId: "1:579912198595:web:29eb7df8f94ab784a53576",
-    measurementId: "G-KVP0PXS5Q1"
+    apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.REACT_APP_FIREBASE_APP_ID,
+    measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);

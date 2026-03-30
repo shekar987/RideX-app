@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Rides ─────────────────────────────────────────────────────────────────
+    match /rides/{rideId} {
+
+      // Only the owner can read their own rides
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+
+      // Authenticated users can create rides they own
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId
+                    && request.resource.data.status == 'confirmed'
+                    && request.resource.data.price is number
+                    && request.resource.data.price > 0;
+
+      // Owner can only cancel a confirmed ride (status: confirmed → cancelled)
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.userId
+                    && resource.data.status == 'confirmed'
+                    && request.resource.data.status == 'cancelled';
+
+      // Never allow client deletes — soft-cancel via status instead
+      allow delete: if false;
+    }
+
+    // ── Internal rate-limit store — Cloud Functions admin SDK only ────────────
+    match /_ratelimits/{doc} {
+      allow read, write: if false;
+    }
+
+    // ── Catch-all: deny everything else ──────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
