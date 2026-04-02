@@ -38,6 +38,7 @@ function MapDisplay({ pickup, destination }) {
             style: 'mapbox://styles/mapbox/dark-v11',
             center: [-0.1276, 51.5074],
             zoom: 12,
+            maxBounds: [[-0.5104, 51.2868], [0.3340, 51.6919]],
         });
         map.current.addControl(new mapboxgl.NavigationControl());
     }, []);
@@ -132,7 +133,7 @@ function LocationInput({ label, color, value, onSelect, onError }) {
         timeoutRef.current = setTimeout(async () => {
             try {
                 const res = await fetch(
-                    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${process.env.REACT_APP_MAPBOX_TOKEN}&limit=5&types=place,address,poi`
+                    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${process.env.REACT_APP_MAPBOX_TOKEN}&limit=5&types=place,address,poi&bbox=-0.5104,51.2868,0.3340,51.6919&proximity=-0.1276,51.5074`
                 );
                 const data = await res.json();
                 const mapped = data.features.map((f) => ({
