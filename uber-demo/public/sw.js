@@ -4,7 +4,7 @@
 //   navigate    → network-first with cache fallback (ensures fresh HTML for SPA routing)
 //   everything else → network-only
 
-const CACHE_NAME = 'ridex-v1';
+const CACHE_NAME = 'ridex-v2';
 const STATIC_PREFIX = '/static/';
 
 // Install: claim clients immediately so the SW activates without a page reload.
