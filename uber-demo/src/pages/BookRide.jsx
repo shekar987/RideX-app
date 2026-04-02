@@ -20,8 +20,8 @@ const KM_TO_MILES = 0.621371;
 
 const RIDE_TYPES = [
     { name: 'Economy', icon: '🚗', desc: '1-4 passengers', ratePerMile: 1.9 },
-    { name: 'Comfort', icon: '🚙', desc: 'Extra legroom',  ratePerMile: 2.9 },
-    { name: 'XL',      icon: '🚐', desc: 'Up to 6 passengers', ratePerMile: 3.9 },
+    { name: 'Comfort', icon: '🚙', desc: 'Extra legroom', ratePerMile: 2.9 },
+    { name: 'XL', icon: '🚐', desc: 'Up to 6 passengers', ratePerMile: 3.9 },
 ];
 
 // Self-contained SVG markers — no external CDN dependency
@@ -149,7 +149,7 @@ function BookRide() {
     const [price, setPrice] = useState(null);
     const [distance, setDistance] = useState(null);
     const [duration, setDuration] = useState(null);
-    const [loading, setLoading]         = useState(false);
+    const [loading, setLoading] = useState(false);
     const [confirmLoading, setConfirmLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -161,13 +161,13 @@ function BookRide() {
         setError('');
         setLoading(true);
         setTimeout(() => {
-            const km    = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
+            const km = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
             const miles = parseFloat((km * KM_TO_MILES).toFixed(1));
-            const rate  = RIDE_TYPES.find(r => r.name === selectedRide).ratePerMile;
+            const rate = RIDE_TYPES.find(r => r.name === selectedRide).ratePerMile;
             const baseFare = 2.5;
             const passengerMultiplier = 1 + (passengers - 1) * 0.1;
             const total = parseFloat((baseFare + miles * rate * passengerMultiplier).toFixed(2));
-            const mins  = Math.round((km / 40) * 60);  // speed stays in km/h internally
+            const mins = Math.round((km / 40) * 60);  // speed stays in km/h internally
             setDistance(miles);
             setDuration(mins);
             setPrice(total);
@@ -179,7 +179,7 @@ function BookRide() {
         setConfirmLoading(true);
         setError('');
         const details = {
-            pickup:      pickup?.name?.split(',').slice(0, 2).join(','),
+            pickup: pickup?.name?.split(',').slice(0, 2).join(','),
             destination: destination?.name?.split(',').slice(0, 2).join(','),
             price, rideType: selectedRide, distance, duration, passengers,
             pickupLat: pickup?.lat, pickupLng: pickup?.lng,
@@ -193,13 +193,13 @@ function BookRide() {
                 saveRide(details),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
             ]);
-        } catch {}
+        } catch { }
 
         const fullDetails = {
             ...details,
-            id:        rideId || `local_${Date.now()}`,
+            id: rideId || `local_${Date.now()}`,
             rideId,
-            status:    'confirmed',
+            status: 'confirmed',
             createdAt: Date.now(),
         };
 
@@ -210,7 +210,7 @@ function BookRide() {
         try {
             const prev = JSON.parse(localStorage.getItem('ridex_rides') || '[]');
             localStorage.setItem('ridex_rides', JSON.stringify([fullDetails, ...prev].slice(0, 50)));
-        } catch {}
+        } catch { }
 
         setConfirmLoading(false);
         navigate('/payment', { state: { ride: fullDetails } });
@@ -425,7 +425,7 @@ function BookRide() {
                         )}
                         {mapCoords.length === 2 && (
                             <>
-                                <Polyline positions={mapCoords} color="#FACC15" weight={4} dashArray="10 6" />
+                                <Polyline positions={mapCoords} color="#0763f7" weight={4} />
                                 <FitMap coords={mapCoords} />
                             </>
                         )}

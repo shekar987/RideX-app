@@ -47,7 +47,16 @@ export function AuthProvider({ children }) {
     const [rideDetails, setRideDetails] = useState(null);
 
     useEffect(() => {
-        const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+            // Sign out users whose email is not yet verified so that a persisted
+            // Firebase session (e.g. after a page refresh) cannot bypass the
+            // verification check.  The signOut triggers a second callback with
+            // firebaseUser === null which falls through to the setUser / setLoading
+            // calls below — no extra loading flash.
+            if (firebaseUser && !firebaseUser.emailVerified) {
+                await signOut(auth);
+                return;
+            }
             setUser(firebaseUser);
             setLoading(false);
         });
@@ -58,8 +67,14 @@ export function AuthProvider({ children }) {
 
     const register = useCallback(async (name, email, password) => {
         const result = await createUserWithEmailAndPassword(auth, email, password);
+        // Send verification email immediately, before any other operations,
+        // so delivery is not delayed by subsequent profile update calls.
+        const actionCodeSettings = {
+            url: window.location.origin + '/login',
+            handleCodeInApp: false,
+        };
+        await sendEmailVerification(result.user, actionCodeSettings);
         await updateProfile(result.user, { displayName: name });
-        await sendEmailVerification(result.user);
         // onAuthStateChanged fires next and sets the real Firebase User object —
         // do NOT call setUser here with a spread (plain objects lack User methods).
     }, []);
@@ -77,9 +92,9 @@ export function AuthProvider({ children }) {
         }
 
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const credential = await signInWithEmailAndPassword(auth, email, password);
             clearAttemptData(email);
-            return { success: true, locked: false, attemptsLeft: MAX_ATTEMPTS, error: null };
+            return { success: true, locked: false, attemptsLeft: MAX_ATTEMPTS, error: null, emailVerified: credential.user.emailVerified };
         } catch (err) {
             const isCredential =
                 err.code === 'auth/wrong-password'     ||

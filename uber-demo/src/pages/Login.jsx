@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { auth } from '../firebase';
+import { signOut, sendEmailVerification } from 'firebase/auth';
 
 function Login() {
     const navigate = useNavigate();
@@ -11,6 +13,11 @@ function Login() {
     const [loading, setLoading] = useState(false);
     const [resetSent, setResetSent] = useState(false);
     const [lockoutSeconds, setLockoutSeconds] = useState(0);
+    const [showResend, setShowResend] = useState(false);
+    const [verificationSent, setVerificationSent] = useState(false);
+    // Holds a reference to the signed-in-but-unverified User object so the
+    // resend handler can call sendEmailVerification after we've signed out.
+    const pendingUserRef = useRef(null);
 
     const handleLogin = async () => {
         const trimmedEmail = email.trim();
@@ -20,11 +27,38 @@ function Login() {
         }
         setLoading(true);
         setError('');
+        setShowResend(false);
+        setVerificationSent(false);
 
         const result = await login(trimmedEmail, password);
         setLoading(false);
 
         if (result.success) {
+            // Capture auth.currentUser synchronously — before any further awaits
+            // give the onAuthStateChanged handler a chance to run and clear it.
+            const currentUser = auth.currentUser;
+
+            if (currentUser) {
+                // Reload to fetch the very latest emailVerified flag from Firebase
+                // (the user may have clicked the verification link since signing up).
+                await currentUser.reload();
+
+                if (!currentUser.emailVerified) {
+                    // Store the user ref before signing out so the resend handler
+                    // can still attempt to send a verification email.
+                    pendingUserRef.current = currentUser;
+                    await signOut(auth);
+                    setShowResend(true);
+                    setError('Your email is not verified yet. Please check your inbox and click the verification link.');
+                    return;
+                }
+            } else if (!result.emailVerified) {
+                // onAuthStateChanged (Problem 3) already signed the user out before
+                // we got here — fall back to the verification status captured at login.
+                setError('Your email is not verified yet. Please check your inbox and click the verification link.');
+                return;
+            }
+
             navigate('/book');
             return;
         }
@@ -42,6 +76,23 @@ function Login() {
             ? ` ${result.attemptsLeft} attempt${result.attemptsLeft !== 1 ? 's' : ''} remaining before lockout.`
             : '';
         setError((result.error || 'Login failed.') + attemptsMsg);
+    };
+
+    const handleResend = async () => {
+        const user = pendingUserRef.current;
+        if (!user) {
+            setError('Please log in again to resend the verification email.');
+            return;
+        }
+        try {
+            await sendEmailVerification(user);
+            setVerificationSent(true);
+            setError('');
+            setShowResend(false);
+        } catch {
+            setError('Could not resend the verification email. Please try logging in again.');
+            setShowResend(false);
+        }
     };
 
     const handleReset = async () => {
@@ -89,10 +140,26 @@ function Login() {
                     </div>
                 )}
 
-                {/* Standard error */}
+                {/* Standard error — with optional resend button for unverified accounts */}
                 {error && !isLocked && (
                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4">
                         <p className="text-red-400 text-sm">{error}</p>
+                        {showResend && (
+                            <button
+                                onClick={handleResend}
+                                type="button"
+                                className="mt-2 text-xs text-yellow-400 hover:underline"
+                            >
+                                Resend verification email
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Verification email sent confirmation */}
+                {verificationSent && (
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 mb-4">
+                        <p className="text-green-400 text-sm">Verification email sent! Please check your inbox.</p>
                     </div>
                 )}
 
