@@ -125,11 +125,42 @@ function MapDisplay({ pickup, destination }) {
 }
 
 // Location search using Mapbox Geocoding API
-function LocationInput({ label, color, value, onSelect, onError }) {
+function LocationInput({ label, color, value, onSelect, onError, showLocateMe }) {
     const [query, setQuery] = useState(value?.name || '');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [locating, setLocating] = useState(false);
     const timeoutRef = useRef(null);
+
+    const locateMe = () => {
+        if (!navigator.geolocation) {
+            if (onError) onError('Geolocation is not supported by your browser.');
+            return;
+        }
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            async ({ coords }) => {
+                try {
+                    const res = await fetch(
+                        `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords.longitude},${coords.latitude}.json?access_token=${mapboxgl.accessToken}&types=address,poi&limit=1`
+                    );
+                    const data = await res.json();
+                    const place = data.features[0];
+                    const name = place ? place.place_name : `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+                    setQuery(name.split(',').slice(0, 2).join(','));
+                    onSelect({ name, lat: coords.latitude, lng: coords.longitude });
+                } catch {
+                    if (onError) onError('Could not resolve your location. Try again.');
+                }
+                setLocating(false);
+            },
+            () => {
+                if (onError) onError('Location access denied. Please allow location permission.');
+                setLocating(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    };
 
     const search = (q) => {
         setQuery(q);
@@ -185,6 +216,27 @@ function LocationInput({ label, color, value, onSelect, onError }) {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                     </svg>
+                )}
+                {showLocateMe && (
+                    <button
+                        onClick={locateMe}
+                        disabled={locating}
+                        title="Use my location"
+                        className="text-gray-500 hover:text-green-400 transition flex-shrink-0 disabled:opacity-50"
+                    >
+                        {locating ? (
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                            </svg>
+                        ) : (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <circle cx="12" cy="12" r="3" />
+                                <path strokeLinecap="round" d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                                <circle cx="12" cy="12" r="9" strokeDasharray="4 2" />
+                            </svg>
+                        )}
+                    </button>
                 )}
             </div>
             {results.length > 0 && (
@@ -326,6 +378,7 @@ function BookRide() {
                             value={pickup}
                             onSelect={setPickup}
                             onError={setError}
+                            showLocateMe
                         />
                         <div className="h-px bg-gray-800 mx-4"></div>
                         <LocationInput
