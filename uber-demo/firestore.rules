@@ -48,19 +48,12 @@ service cloud.firestore {
     // ── Drivers ───────────────────────────────────────────────────────────────
     match /drivers/{docId} {
 
-      // Allow creating a driver application.
-      // The auth token may have been cleared by AuthContext's signOut before this
-      // write completes (race condition), so we accept both authenticated and
-      // unauthenticated creates as long as status is 'pending' and uid is provided.
-      allow create: if (
-                      // Normal case: user is still authenticated
-                      (request.auth != null && request.auth.uid == request.resource.data.uid)
-                      ||
-                      // Race-condition fallback: AuthContext signed out before write completed
-                      (request.resource.data.status == 'pending'
-                       && request.resource.data.uid is string
-                       && request.resource.data.uid.size() > 0)
-                    );
+      // Allow creating a pending driver application.
+      // No auth check — AuthContext signs out unverified users before the
+      // Firestore write completes, so request.auth is null at this point.
+      allow create: if request.resource.data.status == 'pending'
+                    && request.resource.data.uid is string
+                    && request.resource.data.uid.size() > 0;
 
       // Driver can read their own document
       allow read: if request.auth != null
