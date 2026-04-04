@@ -13,7 +13,13 @@ function LandingPage() {
                     </div>
                     <h1 className="text-xl font-black tracking-tight">RideX</h1>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 items-center">
+                    <button
+                        onClick={() => navigate('/driver/login')}
+                        className="px-5 py-2 text-sm text-yellow-400 border border-yellow-400/40 rounded-full hover:bg-yellow-400/10 transition hidden sm:block"
+                    >
+                        Drive with RideX
+                    </button>
                     <button
                         onClick={() => navigate('/login')}
                         className="px-5 py-2 text-sm text-white border border-gray-700 rounded-full hover:border-white transition"
@@ -163,6 +169,22 @@ function LandingPage() {
                             <p className="text-gray-500 text-sm">{f.desc}</p>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Driver CTA banner */}
+            <div className="border-t border-gray-800">
+                <div className="max-w-7xl mx-auto px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div>
+                        <p className="text-white font-black text-xl mb-1">Want to earn with RideX?</p>
+                        <p className="text-gray-500 text-sm">Join our driver network — set your own hours, keep 80% of every fare.</p>
+                    </div>
+                    <button
+                        onClick={() => navigate('/driver/login')}
+                        className="shrink-0 px-8 py-3 bg-yellow-400 text-black font-black rounded-full hover:bg-yellow-300 transition text-sm"
+                    >
+                        Become a Driver →
+                    </button>
                 </div>
             </div>
         </div>
