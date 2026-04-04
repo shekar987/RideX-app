@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import DriverRoute from './components/DriverRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // ── Code-split every route ────────────────────────────────────────────────────
@@ -11,13 +12,15 @@ import ErrorBoundary from './components/ErrorBoundary';
 //   BookRide  chunk — contains Leaflet (~160 KB) and react-leaflet
 //   Payment   chunk — contains @stripe/stripe-js (~40 KB)
 //   These are never in the initial bundle.
-const LandingPage  = lazy(() => import('./pages/LandingPage'));
-const Login        = lazy(() => import('./pages/Login'));
-const Register     = lazy(() => import('./pages/Register'));
-const BookRide     = lazy(() => import('./pages/BookRide'));
-const Payment      = lazy(() => import('./pages/Payment'));
-const RideStatus   = lazy(() => import('./pages/RideStatus'));
-const RideHistory  = lazy(() => import('./pages/RideHistory'));
+const LandingPage       = lazy(() => import('./pages/LandingPage'));
+const Login             = lazy(() => import('./pages/Login'));
+const Register          = lazy(() => import('./pages/Register'));
+const BookRide          = lazy(() => import('./pages/BookRide'));
+const Payment           = lazy(() => import('./pages/Payment'));
+const RideStatus        = lazy(() => import('./pages/RideStatus'));
+const RideHistory       = lazy(() => import('./pages/RideHistory'));
+const DriverLogin       = lazy(() => import('./pages/driver/DriverLogin'));
+const DriverDashboard   = lazy(() => import('./pages/driver/DriverDashboard'));
 
 // ── Page-level loading skeleton ───────────────────────────────────────────────
 // Shown while a route chunk is downloading (typically < 200 ms on broadband,
@@ -56,6 +59,8 @@ export function AppRoutes() {
                 <Route path="/payment"  element={<ProtectedRoute><Payment /></ProtectedRoute>} />
                 <Route path="/status"   element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
                 <Route path="/history"  element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
+                <Route path="/driver/login"     element={<DriverLogin />} />
+                <Route path="/driver/dashboard" element={<DriverRoute><DriverDashboard /></DriverRoute>} />
                 <Route path="*"         element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
