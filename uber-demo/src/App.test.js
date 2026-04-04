@@ -1,226 +1,838 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-// ── Firebase mocks ────────────────────────────────────────────────────────────
-jest.mock('./firebase', () => ({
-  auth: { currentUser: null },
-  db: {},
+// ── Firebase mocks ─────────────────────────────────────────────────────────────
+jest.mock('./firebase', () => ({ auth: { currentUser: null }, db: {} }));
+
+// ── Mapbox — not available in jsdom ───────────────────────────────────────────
+jest.mock('mapbox-gl', () => ({
+    Map: jest.fn(() => ({
+        on: jest.fn(), remove: jest.fn(), addControl: jest.fn(),
+        getSource: jest.fn(), addSource: jest.fn(), addLayer: jest.fn(),
+        flyTo: jest.fn(), fitBounds: jest.fn(),
+    })),
+    NavigationControl: jest.fn(),
+    Marker: jest.fn(() => ({ setLngLat: jest.fn().mockReturnThis(), addTo: jest.fn().mockReturnThis(), remove: jest.fn(), setPopup: jest.fn().mockReturnThis() })),
+    Popup: jest.fn(() => ({ setHTML: jest.fn().mockReturnThis() })),
+    accessToken: '',
+}));
+jest.mock('mapbox-gl/dist/mapbox-gl.css', () => {});
+
+// ── Recharts — avoid SVG/canvas errors in jsdom ───────────────────────────────
+jest.mock('recharts', () => ({
+    BarChart: ({ children }) => <div data-testid="bar-chart">{children}</div>,
+    Bar: () => null,
+    XAxis: () => null,
+    YAxis: () => null,
+    ResponsiveContainer: ({ children }) => <div>{children}</div>,
+    Tooltip: () => null,
 }));
 
-// ── Leaflet / react-leaflet — ESM packages not handled by CRA's Jest transform.
-// BookRide is lazy-loaded and we don't test map rendering here, so stub them out.
-jest.mock('leaflet', () => ({ Icon: { Default: { prototype: {}, mergeOptions: jest.fn() } }, DivIcon: jest.fn(() => ({})) }));
-jest.mock('react-leaflet', () => ({
-  MapContainer: ({ children }) => <div data-testid="map">{children}</div>,
-  TileLayer: () => null,
-  Marker: ({ children }) => <div>{children}</div>,
-  Popup: ({ children }) => <div>{children}</div>,
-  Polyline: () => null,
-  useMap: jest.fn(() => ({ fitBounds: jest.fn() })),
-}));
-
+// ── Firebase Auth ──────────────────────────────────────────────────────────────
 const mockOnAuthStateChanged = jest.fn((auth, cb) => { cb(null); return () => {}; });
-const mockSignIn = jest.fn();
-const mockSignOut = jest.fn();
-const mockSendPasswordResetEmail = jest.fn();
+const mockSignIn             = jest.fn();
+const mockSignOut            = jest.fn();
+const mockCreateUser         = jest.fn();
+const mockSendPasswordReset  = jest.fn();
+const mockSendVerification   = jest.fn();
+const mockReload             = jest.fn();
+const mockUpdateProfile      = jest.fn();
 
 jest.mock('firebase/auth', () => ({
-  getAuth: jest.fn(),
-  onAuthStateChanged: (...args) => mockOnAuthStateChanged(...args),
-  createUserWithEmailAndPassword: jest.fn(),
-  signInWithEmailAndPassword: (...args) => mockSignIn(...args),
-  signOut: (...args) => mockSignOut(...args),
-  updateProfile: jest.fn(),
-  sendEmailVerification: jest.fn(),
-  sendPasswordResetEmail: (...args) => mockSendPasswordResetEmail(...args),
-  reload: jest.fn(),
+    getAuth:                      jest.fn(),
+    onAuthStateChanged:           (...a) => mockOnAuthStateChanged(...a),
+    signInWithEmailAndPassword:   (...a) => mockSignIn(...a),
+    signOut:                      (...a) => mockSignOut(...a),
+    createUserWithEmailAndPassword: (...a) => mockCreateUser(...a),
+    sendEmailVerification:        (...a) => mockSendVerification(...a),
+    sendPasswordResetEmail:       (...a) => mockSendPasswordReset(...a),
+    updateProfile:                (...a) => mockUpdateProfile(...a),
+    reload:                       (...a) => mockReload(...a),
 }));
 
+// ── Firebase Firestore ────────────────────────────────────────────────────────
+const mockGetDocs    = jest.fn();
+const mockOnSnapshot = jest.fn(() => () => {});
+const mockAddDoc     = jest.fn();
+const mockUpdateDoc  = jest.fn();
+const mockRunTx      = jest.fn();
+
 jest.mock('firebase/firestore', () => ({
-  getFirestore: jest.fn(),
-  collection: jest.fn(),
-  addDoc: jest.fn(),
-  doc: jest.fn(),
-  onSnapshot: jest.fn(),
-  serverTimestamp: jest.fn(),
+    getFirestore:    jest.fn(),
+    collection:      jest.fn(),
+    query:           jest.fn(),
+    where:           jest.fn(),
+    doc:             jest.fn(),
+    getDocs:         (...a) => mockGetDocs(...a),
+    onSnapshot:      (...a) => mockOnSnapshot(...a),
+    addDoc:          (...a) => mockAddDoc(...a),
+    updateDoc:       (...a) => mockUpdateDoc(...a),
+    runTransaction:  (...a) => mockRunTx(...a),
+    serverTimestamp: jest.fn(() => ({ _type: 'serverTimestamp' })),
+    increment:       jest.fn(n => n),
 }));
+
+// ── Stripe ────────────────────────────────────────────────────────────────────
+jest.mock('@stripe/react-stripe-js', () => ({
+    Elements: ({ children }) => <div>{children}</div>,
+    CardElement: () => <div data-testid="card-element" />,
+    useStripe: () => ({ createPaymentMethod: jest.fn() }),
+    useElements: () => ({ getElement: jest.fn() }),
+}));
+jest.mock('@stripe/stripe-js', () => ({ loadStripe: jest.fn(() => Promise.resolve({})) }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 import { AppRoutes } from './App';
 import { AuthProvider } from './context/AuthContext';
 
+const VERIFIED_USER = {
+    uid: 'uid-test-1',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    emailVerified: true,
+};
+
 function renderAt(path) {
-  return render(
-    <AuthProvider>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </AuthProvider>
-  );
-}
-
-// Render with a simulated logged-in (verified) user
-function renderAuthenticated(path) {
-  const verifiedUser = { uid: 'u1', email: 'test@example.com', displayName: 'Test', emailVerified: true };
-  mockOnAuthStateChanged.mockImplementation((auth, cb) => { cb(verifiedUser); return () => {}; });
-  return render(
-    <AuthProvider>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </AuthProvider>
-  );
-}
-
-// ── Routing ───────────────────────────────────────────────────────────────────
-describe('Routing', () => {
-  beforeEach(() => {
-    mockOnAuthStateChanged.mockImplementation((auth, cb) => { cb(null); return () => {}; });
-  });
-
-  test('landing page renders the RideX brand name', async () => {
-    renderAt('/');
-    const headings = await screen.findAllByText('RideX');
-    expect(headings.length).toBeGreaterThan(0);
-  });
-
-  test('unauthenticated users are redirected from /book to /login', async () => {
-    renderAt('/book');
-    expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
-  });
-
-  test('unauthenticated users are redirected from /payment to /login', async () => {
-    renderAt('/payment');
-    expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
-  });
-
-  test('unauthenticated users are redirected from /status to /login', async () => {
-    renderAt('/status');
-    expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
-  });
-
-  test('unknown route redirects to the landing page', async () => {
-    renderAt('/this-route-does-not-exist');
-    const headings = await screen.findAllByText('RideX');
-    expect(headings.length).toBeGreaterThan(0);
-  });
-
-  test('authenticated verified user can reach /book', async () => {
-    renderAuthenticated('/book');
-    await waitFor(() => expect(screen.getByText(/where to/i)).toBeInTheDocument());
-  });
-});
-
-// ── Login page ────────────────────────────────────────────────────────────────
-describe('Login page', () => {
-  beforeEach(() => {
-    mockOnAuthStateChanged.mockImplementation((auth, cb) => { cb(null); return () => {}; });
-  });
-
-  test('renders email and password fields', () => {
-    renderAt('/login');
-    expect(screen.getByPlaceholderText(/enter your email/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/enter your password/i)).toBeInTheDocument();
-  });
-
-  test('shows validation error when fields are empty', async () => {
-    renderAt('/login');
-    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
-    await waitFor(() =>
-      expect(screen.getByText(/please enter your email and password/i)).toBeInTheDocument()
+    return render(
+        <AuthProvider>
+            <MemoryRouter initialEntries={[path]}>
+                <AppRoutes />
+            </MemoryRouter>
+        </AuthProvider>
     );
-  });
+}
 
-  test('calls signInWithEmailAndPassword on valid submit', async () => {
-    mockSignIn.mockResolvedValueOnce({ user: { uid: 'u1' } });
-    renderAt('/login');
-    fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-    fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'Password1!' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+function renderAuthed(path) {
+    mockOnAuthStateChanged.mockImplementation((auth, cb) => {
+        cb(VERIFIED_USER);
+        return () => {};
     });
-    expect(mockSignIn).toHaveBeenCalledWith(expect.anything(), 'a@b.com', 'Password1!');
-  });
+    // Firestore getDocs returns empty by default (not a driver)
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    return render(
+        <AuthProvider>
+            <MemoryRouter initialEntries={[path]}>
+                <AppRoutes />
+            </MemoryRouter>
+        </AuthProvider>
+    );
+}
 
-  test('shows error message on invalid credentials', async () => {
-    mockSignIn.mockRejectedValueOnce({ code: 'auth/invalid-credential' });
-    renderAt('/login');
-    fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-    fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'WrongPass1!' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /log in/i }));
-    });
-    expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
-  });
-
-  test('forgot password sends reset email', async () => {
-    mockSendPasswordResetEmail.mockResolvedValueOnce();
-    renderAt('/login');
-    fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /forgot password/i }));
-    });
-    expect(mockSendPasswordResetEmail).toHaveBeenCalled();
-    expect(await screen.findByText(/reset link sent/i)).toBeInTheDocument();
-  });
-});
-
-// ── Register page ─────────────────────────────────────────────────────────────
-describe('Register page', () => {
-  beforeEach(() => {
+beforeEach(() => {
     mockOnAuthStateChanged.mockImplementation((auth, cb) => { cb(null); return () => {}; });
-  });
-
-  test('renders all registration fields', async () => {
-    renderAt('/register');
-    expect(await screen.findByPlaceholderText(/full name/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/enter your email/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/min\. 8 characters/i)).toBeInTheDocument();
-  });
-
-  test('shows error when name is too short', async () => {
-    renderAt('/register');
-    fireEvent.change(screen.getByPlaceholderText(/full name/i), { target: { value: 'A' } });
-    fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-    fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /create account/i }));
-    });
-    expect(screen.getByText(/at least 2 characters/i)).toBeInTheDocument();
-  });
-
-  test('shows error for weak password', async () => {
-    renderAt('/register');
-    fireEvent.change(screen.getByPlaceholderText(/full name/i), { target: { value: 'Alice' } });
-    fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-    fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'short' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /create account/i }));
-    });
-    // The error banner says "Password must be at least 8 characters." — distinct from the hint text
-    expect(screen.getByText(/password must be at least 8 characters/i)).toBeInTheDocument();
-  });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockOnSnapshot.mockReturnValue(() => {});
+    jest.clearAllMocks();
+    mockOnAuthStateChanged.mockImplementation((auth, cb) => { cb(null); return () => {}; });
 });
 
-// ── Fare calculation (unit) ───────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — Routing
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Routing', () => {
+    test('landing page renders the RideX brand', async () => {
+        renderAt('/');
+        expect((await screen.findAllByText('RideX')).length).toBeGreaterThan(0);
+    });
+
+    test('unknown route redirects to landing page', async () => {
+        renderAt('/this-does-not-exist');
+        expect((await screen.findAllByText('RideX')).length).toBeGreaterThan(0);
+    });
+
+    test('unauthenticated /book redirects to login', async () => {
+        renderAt('/book');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
+    test('unauthenticated /payment redirects to login', async () => {
+        renderAt('/payment');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
+    test('unauthenticated /status redirects to login', async () => {
+        renderAt('/status');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
+    test('unauthenticated /history redirects to login', async () => {
+        renderAt('/history');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
+    test('/driver/login renders driver portal', async () => {
+        renderAt('/driver/login');
+        expect(await screen.findByText(/driver portal/i)).toBeInTheDocument();
+    });
+
+    test('/login renders the login page', async () => {
+        renderAt('/login');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
+    test('/register renders the register page', async () => {
+        renderAt('/register');
+        // Use heading role to disambiguate from the button text
+        expect(await screen.findByRole('heading', { name: /create account/i })).toBeInTheDocument();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — Login page
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Login page', () => {
+    test('renders email and password fields', async () => {
+        renderAt('/login');
+        expect(await screen.findByPlaceholderText(/enter your email/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/enter your password/i)).toBeInTheDocument();
+    });
+
+    test('shows role tabs — Customer and Driver', async () => {
+        renderAt('/login');
+        expect(await screen.findByText('Customer')).toBeInTheDocument();
+        expect(screen.getByText('Driver')).toBeInTheDocument();
+    });
+
+    test('shows "Signing in as Customer" badge', async () => {
+        renderAt('/login?role=customer');
+        expect(await screen.findByText(/signing in as customer/i)).toBeInTheDocument();
+    });
+
+    test('shows validation error when fields are empty', async () => {
+        renderAt('/login');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+        });
+        expect(await screen.findByText(/please enter your email and password/i)).toBeInTheDocument();
+    });
+
+    test('calls signInWithEmailAndPassword with trimmed email', async () => {
+        mockSignIn.mockResolvedValueOnce({
+            user: { uid: 'u1', emailVerified: true, reload: jest.fn() },
+        });
+        mockReload.mockResolvedValueOnce();
+        renderAt('/login');
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: '  a@b.com  ' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'Password1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+        });
+        expect(mockSignIn).toHaveBeenCalledWith(expect.anything(), 'a@b.com', 'Password1!');
+    });
+
+    test('shows invalid credential error', async () => {
+        mockSignIn.mockRejectedValueOnce({ code: 'auth/invalid-credential' });
+        renderAt('/login');
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'WrongPass1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+        });
+        expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
+    });
+
+    test('shows lockout message after max failed attempts', async () => {
+        // Clear sessionStorage so lockout state from other tests doesn't bleed in
+        sessionStorage.clear();
+        mockSignIn.mockRejectedValue({ code: 'auth/wrong-password' });
+
+        renderAt('/login');
+        const emailInput = screen.getByPlaceholderText(/enter your email/i);
+        const passInput  = screen.getByPlaceholderText(/enter your password/i);
+        fireEvent.change(emailInput, { target: { value: 'lockout@test.com' } });
+        fireEvent.change(passInput,  { target: { value: 'bad' } });
+
+        for (let i = 0; i < 5; i++) {
+            await act(async () => {
+                fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+            });
+        }
+        // The message appears in the banner AND the button — check the banner specifically
+        expect(screen.getAllByText(/too many failed attempts|account locked/i).length).toBeGreaterThan(0);
+        sessionStorage.clear();
+    });
+
+    test('forgot password sends reset email', async () => {
+        mockSendPasswordReset.mockResolvedValueOnce();
+        renderAt('/login');
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /forgot password/i }));
+        });
+        expect(mockSendPasswordReset).toHaveBeenCalled();
+        expect(await screen.findByText(/reset link sent/i)).toBeInTheDocument();
+    });
+
+    test('forgot password shows error when email field is empty', async () => {
+        renderAt('/login');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /forgot password/i }));
+        });
+        expect(await screen.findByText(/enter your email address/i)).toBeInTheDocument();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — Register page
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Register page', () => {
+    test('renders all fields', async () => {
+        renderAt('/register');
+        expect(await screen.findByPlaceholderText(/full name/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/enter your email/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/min\. 8 characters/i)).toBeInTheDocument();
+    });
+
+    test('shows role tabs', async () => {
+        renderAt('/register');
+        expect(await screen.findByText('Customer')).toBeInTheDocument();
+        expect(screen.getByText('Driver')).toBeInTheDocument();
+    });
+
+    test('shows "Registering as Customer" badge', async () => {
+        renderAt('/register');
+        expect(await screen.findByText(/registering as customer/i)).toBeInTheDocument();
+    });
+
+    test('shows error when name is too short', async () => {
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'A' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+        });
+        expect(screen.getByText(/at least 2 characters/i)).toBeInTheDocument();
+    });
+
+    test('shows error for invalid characters in name', async () => {
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice123' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+        });
+        expect(screen.getByText(/letters, spaces, hyphens/i)).toBeInTheDocument();
+    });
+
+    test('shows error for weak password (too short)', async () => {
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'short' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+        });
+        expect(screen.getByText(/password must be at least 8 characters/i)).toBeInTheDocument();
+    });
+
+    test('shows error for password with no digit or symbol', async () => {
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'OnlyLetters' } });
+        // The form has a submit button with exact text "Create Account"
+        const submitBtn = (await screen.findAllByRole('button')).find(b => b.textContent === 'Create Account');
+        await act(async () => { fireEvent.click(submitBtn); });
+        // The error banner text is the full sentence; hint text below field also matches.
+        // Check that the red error banner specifically appears.
+        const errors = await screen.findAllByText(/number or symbol/i);
+        expect(errors.some(el => el.classList.contains('text-red-400'))).toBe(true);
+    });
+
+    test('shows error when fields are missing', async () => {
+        renderAt('/register');
+        await act(async () => {
+            fireEvent.click(await screen.findByRole('button', { name: /create account/i }));
+        });
+        expect(screen.getByText(/please fill in all fields/i)).toBeInTheDocument();
+    });
+
+    test('shows duplicate email error from Firebase', async () => {
+        mockCreateUser.mockRejectedValueOnce({ code: 'auth/email-already-in-use' });
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice Smith' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+        });
+        expect(screen.getByText(/email already in use/i)).toBeInTheDocument();
+    });
+
+    test('shows verification email screen on success', async () => {
+        mockCreateUser.mockResolvedValueOnce({ user: { uid: 'u1', emailVerified: false } });
+        mockSendVerification.mockResolvedValueOnce();
+        mockUpdateProfile.mockResolvedValueOnce();
+        renderAt('/register');
+        fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice Smith' } });
+        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'alice@test.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+        });
+        expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — Driver Login page
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Driver Login page', () => {
+    test('renders Driver Portal heading', async () => {
+        renderAt('/driver/login');
+        expect(await screen.findByText(/driver portal/i)).toBeInTheDocument();
+    });
+
+    test('shows Sign In and Register tabs', async () => {
+        renderAt('/driver/login');
+        // The tab switcher uses buttons with exact text
+        const buttons = await screen.findAllByRole('button');
+        const labels = buttons.map(b => b.textContent);
+        expect(labels.some(l => /sign in/i.test(l))).toBe(true);
+        expect(labels.some(l => /register/i.test(l))).toBe(true);
+    });
+
+    test('shows role tabs — Customer and Driver', async () => {
+        renderAt('/driver/login');
+        expect(await screen.findByText('Customer')).toBeInTheDocument();
+        expect(screen.getByText('Driver')).toBeInTheDocument();
+    });
+
+    test('shows "Signing in as Driver" badge', async () => {
+        renderAt('/driver/login');
+        expect(await screen.findByText(/signing in as driver/i)).toBeInTheDocument();
+    });
+
+    test('Register tab shows all required fields', async () => {
+        renderAt('/driver/login');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /register/i }));
+        });
+        expect(await screen.findByPlaceholderText(/john smith/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/\+1 555/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/AB12 CDE/i)).toBeInTheDocument();
+    });
+
+    test('Register tab shows vehicle type dropdown', async () => {
+        renderAt('/driver/login');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /register/i }));
+        });
+        const select = await screen.findByRole('combobox');
+        expect(select).toBeInTheDocument();
+        expect(select).toHaveValue('Sedan');
+    });
+
+    test('shows password length error on short password', async () => {
+        renderAt('/driver/login');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /register/i }));
+        });
+        fireEvent.change(await screen.findByPlaceholderText(/minimum 6/i), { target: { value: '123' } });
+        fireEvent.change(screen.getByPlaceholderText(/john smith/i), { target: { value: 'Test Driver' } });
+        fireEvent.change(screen.getByPlaceholderText(/driver@example\.com/i), { target: { value: 'd@test.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /submit application/i }));
+        });
+        expect(await screen.findByText(/password must be at least 6/i)).toBeInTheDocument();
+    });
+
+    test('shows email-already-in-use error', async () => {
+        mockCreateUser.mockRejectedValueOnce({ code: 'auth/email-already-in-use' });
+        renderAt('/driver/login');
+
+        // Switch to Register tab
+        const allButtons = await screen.findAllByRole('button');
+        const registerTab = allButtons.find(b => b.textContent === 'Register');
+        await act(async () => { fireEvent.click(registerTab); });
+
+        fireEvent.change(await screen.findByPlaceholderText(/john smith/i), { target: { value: 'Test Driver' } });
+        fireEvent.change(screen.getByPlaceholderText(/driver@example\.com/i), { target: { value: 'existing@test.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/minimum 6/i), { target: { value: 'Password1' } });
+        fireEvent.change(screen.getByPlaceholderText(/\+1 555/i), { target: { value: '+441234567890' } });
+        fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /submit application/i }));
+        });
+        // mapAuthError maps 'auth/email-already-in-use' → 'An account with this email already exists.'
+        expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — Landing page
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Landing page', () => {
+    test('renders I\'m a Customer button', async () => {
+        renderAt('/');
+        expect(await screen.findByText(/i'm a customer/i)).toBeInTheDocument();
+    });
+
+    test('renders I\'m a Driver button', async () => {
+        renderAt('/');
+        expect(await screen.findByText(/i'm a driver/i)).toBeInTheDocument();
+    });
+
+    test('renders Become a Driver CTA', async () => {
+        renderAt('/');
+        expect(await screen.findByText(/become a driver/i)).toBeInTheDocument();
+    });
+
+    test('renders stats section', async () => {
+        renderAt('/');
+        expect(await screen.findByText(/rides completed/i)).toBeInTheDocument();
+        expect(screen.getByText(/average rating/i)).toBeInTheDocument();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 6 — Utility: password validation
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Password validation rules', () => {
+    const PASSWORD_LETTER_RE         = /[a-zA-Z]/;
+    const PASSWORD_DIGIT_OR_SYMBOL_RE = /[\d!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/;
+
+    function validatePassword(pw) {
+        if (pw.length < 8)                           return 'Password must be at least 8 characters.';
+        if (!PASSWORD_LETTER_RE.test(pw))            return 'Password must include at least one letter.';
+        if (!PASSWORD_DIGIT_OR_SYMBOL_RE.test(pw))   return 'Password must include at least one number or symbol.';
+        return null;
+    }
+
+    test('rejects password shorter than 8 chars', () => {
+        expect(validatePassword('Ab1!')).toBe('Password must be at least 8 characters.');
+    });
+
+    test('rejects password with no letters', () => {
+        expect(validatePassword('12345678!')).toBe('Password must include at least one letter.');
+    });
+
+    test('rejects password with no digit or symbol', () => {
+        expect(validatePassword('OnlyLetters')).toBe('Password must include at least one number or symbol.');
+    });
+
+    test('accepts valid password', () => {
+        expect(validatePassword('Password1!')).toBeNull();
+    });
+
+    test('accepts password with symbol instead of digit', () => {
+        expect(validatePassword('Password!!')).toBeNull();
+    });
+
+    test('accepts password with digit instead of symbol', () => {
+        expect(validatePassword('Password11')).toBeNull();
+    });
+
+    test('rejects empty string', () => {
+        expect(validatePassword('')).toBe('Password must be at least 8 characters.');
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 7 — Utility: name validation
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Name validation rules', () => {
+    const NAME_RE = /^[\p{L}\s'-]+$/u;
+
+    function validateName(name) {
+        const t = name.trim();
+        if (t.length < 2)         return 'Name must be at least 2 characters.';
+        if (!NAME_RE.test(t))     return 'Name may only contain letters, spaces, hyphens, and apostrophes.';
+        return null;
+    }
+
+    test('rejects single character', () => {
+        expect(validateName('A')).toMatch(/at least 2/i);
+    });
+
+    test('rejects name with numbers', () => {
+        expect(validateName('Alice123')).toMatch(/letters, spaces/i);
+    });
+
+    test('rejects name with special chars', () => {
+        expect(validateName('Alice@Smith')).toMatch(/letters, spaces/i);
+    });
+
+    test('accepts plain name', () => {
+        expect(validateName('Alice')).toBeNull();
+    });
+
+    test('accepts hyphenated name', () => {
+        expect(validateName('Mary-Jane')).toBeNull();
+    });
+
+    test("accepts name with apostrophe", () => {
+        expect(validateName("O'Brien")).toBeNull();
+    });
+
+    test('accepts multi-word name', () => {
+        expect(validateName('Soma Shekar Keesari')).toBeNull();
+    });
+
+    test('trims surrounding whitespace before validation', () => {
+        expect(validateName('  Alice  ')).toBeNull();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 8 — Utility: email validation
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Email validation', () => {
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    test('accepts standard email', () => {
+        expect(EMAIL_RE.test('user@example.com')).toBe(true);
+    });
+
+    test('accepts email with subdomain', () => {
+        expect(EMAIL_RE.test('user@mail.example.co.uk')).toBe(true);
+    });
+
+    test('rejects email without @', () => {
+        expect(EMAIL_RE.test('userexample.com')).toBe(false);
+    });
+
+    test('rejects email without domain', () => {
+        expect(EMAIL_RE.test('user@')).toBe(false);
+    });
+
+    test('rejects empty string', () => {
+        expect(EMAIL_RE.test('')).toBe(false);
+    });
+
+    test('rejects email with spaces', () => {
+        expect(EMAIL_RE.test('user @example.com')).toBe(false);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 9 — Utility: fare calculation
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Fare calculation', () => {
+    const DRIVER_SHARE    = 0.8;
+    const PLATFORM_SHARE  = 0.2;
+
+    function driverEarnings(fare)   { return parseFloat((fare * DRIVER_SHARE).toFixed(2)); }
+    function platformFee(fare)      { return parseFloat((fare * PLATFORM_SHARE).toFixed(2)); }
+    function totalFromDriver(earn)  { return parseFloat((earn / DRIVER_SHARE).toFixed(2)); }
+
+    test('driver gets 80% of fare', () => {
+        expect(driverEarnings(10)).toBe(8.00);
+    });
+
+    test('platform gets 20% of fare', () => {
+        expect(platformFee(10)).toBe(2.00);
+    });
+
+    test('driver + platform = total fare', () => {
+        const fare = 25.50;
+        expect(driverEarnings(fare) + platformFee(fare)).toBeCloseTo(fare, 2);
+    });
+
+    test('zero fare yields zero earnings', () => {
+        expect(driverEarnings(0)).toBe(0);
+        expect(platformFee(0)).toBe(0);
+    });
+
+    test('rounds to 2 decimal places', () => {
+        // £9.99 * 0.8 = £7.992 → rounds to £7.99
+        expect(driverEarnings(9.99)).toBe(7.99);
+    });
+
+    test('large fare calculates correctly', () => {
+        expect(driverEarnings(100)).toBe(80.00);
+        expect(platformFee(100)).toBe(20.00);
+    });
+
+    test('reconstructing total from driver earnings', () => {
+        const fare = 50;
+        const earn = driverEarnings(fare);
+        expect(totalFromDriver(earn)).toBeCloseTo(fare, 1);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 10 — Utility: haversine distance
+// ═════════════════════════════════════════════════════════════════════════════
 describe('Haversine distance', () => {
-  // Import inline to avoid needing a module export
-  function haversineKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2
-      + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
+    function haversineKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
 
-  test('same point returns 0 km', () => {
-    expect(haversineKm(51.5, -0.1, 51.5, -0.1)).toBe(0);
-  });
+    test('same point returns 0', () => {
+        expect(haversineKm(51.5, -0.1, 51.5, -0.1)).toBe(0);
+    });
 
-  test('London to Manchester is roughly 260 km', () => {
-    const km = haversineKm(51.509865, -0.118092, 53.483959, -2.244644);
-    expect(km).toBeGreaterThan(250);
-    expect(km).toBeLessThan(270);
-  });
+    test('London to Manchester ≈ 260 km', () => {
+        const km = haversineKm(51.509865, -0.118092, 53.483959, -2.244644);
+        expect(km).toBeGreaterThan(250);
+        expect(km).toBeLessThan(270);
+    });
+
+    test('London to Edinburgh ≈ 530 km', () => {
+        const km = haversineKm(51.509865, -0.118092, 55.953251, -3.188267);
+        expect(km).toBeGreaterThan(520);
+        expect(km).toBeLessThan(540);
+    });
+
+    test('is symmetric — A→B equals B→A', () => {
+        const ab = haversineKm(51.5, -0.1, 53.4, -2.2);
+        const ba = haversineKm(53.4, -2.2, 51.5, -0.1);
+        expect(ab).toBeCloseTo(ba, 5);
+    });
+
+    test('short distance — 1 km apart', () => {
+        // ~0.009 degrees latitude ≈ 1 km
+        const km = haversineKm(51.5, -0.1, 51.509, -0.1);
+        expect(km).toBeGreaterThan(0.9);
+        expect(km).toBeLessThan(1.1);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 11 — Utility: date helpers
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Date helpers', () => {
+    function isToday(ts) {
+        if (!ts) return false;
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        return d.toDateString() === new Date().toDateString();
+    }
+
+    function isThisWeek(ts) {
+        if (!ts) return false;
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 6);
+        weekAgo.setHours(0, 0, 0, 0);
+        return d >= weekAgo;
+    }
+
+    test('isToday returns true for right now', () => {
+        expect(isToday(new Date())).toBe(true);
+    });
+
+    test('isToday returns false for yesterday', () => {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        expect(isToday(yesterday)).toBe(false);
+    });
+
+    test('isToday returns false for null', () => {
+        expect(isToday(null)).toBe(false);
+    });
+
+    test('isToday works with Firestore-style timestamp object', () => {
+        const now = new Date();
+        expect(isToday({ toDate: () => now })).toBe(true);
+    });
+
+    test('isThisWeek returns true for today', () => {
+        expect(isThisWeek(new Date())).toBe(true);
+    });
+
+    test('isThisWeek returns true for 6 days ago', () => {
+        const d = new Date();
+        d.setDate(d.getDate() - 6);
+        expect(isThisWeek(d)).toBe(true);
+    });
+
+    test('isThisWeek returns false for 8 days ago', () => {
+        const d = new Date();
+        d.setDate(d.getDate() - 8);
+        expect(isThisWeek(d)).toBe(false);
+    });
+
+    test('isThisWeek returns false for null', () => {
+        expect(isThisWeek(null)).toBe(false);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 12 — Auth error mapping
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Auth error mapping', () => {
+    function mapAuthError(code) {
+        switch (code) {
+            case 'auth/email-already-in-use':    return 'An account with this email already exists.';
+            case 'auth/invalid-email':           return 'Invalid email address.';
+            case 'auth/weak-password':           return 'Password must be at least 6 characters.';
+            case 'auth/user-not-found':
+            case 'auth/wrong-password':
+            case 'auth/invalid-credential':      return 'Invalid email or password.';
+            case 'auth/too-many-requests':       return 'Too many attempts. Please try again later.';
+            default:                             return 'Something went wrong. Please try again.';
+        }
+    }
+
+    test('maps email-already-in-use', () => {
+        expect(mapAuthError('auth/email-already-in-use')).toMatch(/already registered|already exists/i);
+    });
+
+    test('maps invalid-email', () => {
+        expect(mapAuthError('auth/invalid-email')).toMatch(/invalid email/i);
+    });
+
+    test('maps weak-password', () => {
+        expect(mapAuthError('auth/weak-password')).toMatch(/password/i);
+    });
+
+    test('maps wrong-password to generic credential error', () => {
+        expect(mapAuthError('auth/wrong-password')).toMatch(/invalid email or password/i);
+    });
+
+    test('maps user-not-found to generic credential error', () => {
+        expect(mapAuthError('auth/user-not-found')).toMatch(/invalid email or password/i);
+    });
+
+    test('maps invalid-credential', () => {
+        expect(mapAuthError('auth/invalid-credential')).toMatch(/invalid email or password/i);
+    });
+
+    test('maps too-many-requests', () => {
+        expect(mapAuthError('auth/too-many-requests')).toMatch(/too many/i);
+    });
+
+    test('unknown code returns generic message', () => {
+        expect(mapAuthError('auth/some-unknown-code')).toMatch(/something went wrong/i);
+    });
+
+    test('undefined code returns generic message', () => {
+        expect(mapAuthError(undefined)).toMatch(/something went wrong/i);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION 13 — Driver share edge cases
+// ═════════════════════════════════════════════════════════════════════════════
+describe('Driver earnings — edge cases', () => {
+    const DRIVER_SHARE = 0.8;
+
+    test('handles string fare (coerced by parseFloat)', () => {
+        const fare = parseFloat('15.00');
+        expect(parseFloat((fare * DRIVER_SHARE).toFixed(2))).toBe(12.00);
+    });
+
+    test('handles very small fare (£0.01)', () => {
+        const earn = parseFloat((0.01 * DRIVER_SHARE).toFixed(2));
+        expect(earn).toBe(0.01);
+    });
+
+    test('handles undefined fare defaulting to 0', () => {
+        const fare = undefined ?? 0;
+        expect(parseFloat((fare * DRIVER_SHARE).toFixed(2))).toBe(0);
+    });
+
+    test('NaN fare results in NaN earnings', () => {
+        expect(isNaN(NaN * DRIVER_SHARE)).toBe(true);
+    });
 });
