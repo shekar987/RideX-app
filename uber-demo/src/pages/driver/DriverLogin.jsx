@@ -108,7 +108,10 @@ export default function DriverLogin() {
             setRegSuccess(true);
             setRegForm(EMPTY_REGISTER);
         } catch (err) {
-            setRegError(mapAuthError(err.code));
+            // Show Firebase Auth error if available, otherwise show the raw message
+            setRegError(mapAuthError(err.code) !== 'Something went wrong. Please try again.'
+                ? mapAuthError(err.code)
+                : err.message || 'Something went wrong. Please try again.');
         } finally {
             setRegLoading(false);
         }

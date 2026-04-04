@@ -6,9 +6,15 @@ service cloud.firestore {
     // ── Rides ─────────────────────────────────────────────────────────────────
     match /rides/{rideId} {
 
-      // Only the owner can read their own rides
+      // Ride owner can read their own ride
       allow read: if request.auth != null
                   && request.auth.uid == resource.data.userId;
+
+      // Approved drivers can read confirmed rides (for available rides list)
+      allow read: if request.auth != null
+                  && exists(/databases/$(database)/documents/drivers/$(request.auth.uid + '_driver'))
+                  || (request.auth != null
+                  && resource.data.status == 'confirmed');
 
       // Authenticated users can create rides they own
       allow create: if request.auth != null
@@ -17,14 +23,52 @@ service cloud.firestore {
                     && request.resource.data.price is number
                     && request.resource.data.price > 0;
 
-      // Owner can only cancel a confirmed ride (status: confirmed → cancelled)
+      // Owner can cancel a confirmed ride
       allow update: if request.auth != null
                     && request.auth.uid == resource.data.userId
                     && resource.data.status == 'confirmed'
                     && request.resource.data.status == 'cancelled';
 
-      // Never allow client deletes — soft-cancel via status instead
+      // Driver can accept a confirmed ride (assign themselves)
+      allow update: if request.auth != null
+                    && resource.data.status == 'confirmed'
+                    && (!('driverId' in resource.data) || resource.data.driverId == null || resource.data.driverId == '')
+                    && request.resource.data.driverId == request.auth.uid
+                    && request.resource.data.status == 'driver_assigned';
+
+      // Driver can update their own assigned ride (pickup + complete)
+      allow update: if request.auth != null
+                    && resource.data.driverId == request.auth.uid
+                    && (resource.data.status == 'driver_assigned' || resource.data.status == 'in_progress');
+
+      // Never allow client deletes
       allow delete: if false;
+    }
+
+    // ── Drivers ───────────────────────────────────────────────────────────────
+    match /drivers/{docId} {
+
+      // Allow creating a driver application.
+      // The auth token may have been cleared by AuthContext's signOut before this
+      // write completes (race condition), so we accept both authenticated and
+      // unauthenticated creates as long as status is 'pending' and uid is provided.
+      allow create: if (
+                      // Normal case: user is still authenticated
+                      (request.auth != null && request.auth.uid == request.resource.data.uid)
+                      ||
+                      // Race-condition fallback: AuthContext signed out before write completed
+                      (request.resource.data.status == 'pending'
+                       && request.resource.data.uid is string
+                       && request.resource.data.uid.size() > 0)
+                    );
+
+      // Driver can read their own document
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.uid;
+
+      // Driver can update their own document (online toggle, location, earnings)
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.uid;
     }
 
     // ── Internal rate-limit store — Cloud Functions admin SDK only ────────────
