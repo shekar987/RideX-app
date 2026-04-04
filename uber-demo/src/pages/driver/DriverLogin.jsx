@@ -85,10 +85,7 @@ export default function DriverLogin() {
             );
             const user = credential.user;
 
-            await sendEmailVerification(user, {
-                url: window.location.origin + '/driver/login',
-                handleCodeInApp: false,
-            });
+            await sendEmailVerification(user);
 
             await addDoc(collection(db, 'drivers'), {
                 uid:         user.uid,
@@ -174,10 +171,7 @@ export default function DriverLogin() {
     async function handleResendVerification() {
         if (!unverifiedUser || resendCooldown) return;
         try {
-            await sendEmailVerification(unverifiedUser, {
-                url: window.location.origin + '/driver/login',
-                handleCodeInApp: false,
-            });
+            await sendEmailVerification(unverifiedUser);
             setResendCooldown(true);
             setTimeout(() => setResendCooldown(false), 60_000);
         } catch {
