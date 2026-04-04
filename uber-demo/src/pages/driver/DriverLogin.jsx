@@ -85,7 +85,11 @@ export default function DriverLogin() {
             );
             const user = credential.user;
 
-            await sendEmailVerification(user);
+            // Start the verification email immediately — do NOT await yet.
+            // AuthContext's onAuthStateChanged will sign out unverified users
+            // asynchronously; kicking off the email first ensures the request
+            // reaches Firebase before the token is cleared.
+            const emailVerifPromise = sendEmailVerification(user);
 
             await addDoc(collection(db, 'drivers'), {
                 uid:         user.uid,
@@ -101,6 +105,9 @@ export default function DriverLogin() {
                 isOnline:    false,
                 createdAt:   serverTimestamp(),
             });
+
+            // Now confirm the verification email completed
+            await emailVerifPromise;
 
             setRegSuccess(true);
             setRegForm(EMPTY_REGISTER);
