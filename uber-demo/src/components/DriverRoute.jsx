@@ -10,24 +10,30 @@ import { auth, db } from '../firebase';
 // - drivers to update rides where driverId == their uid
 
 function DriverRoute({ children }) {
-    const [status, setStatus] = useState('loading'); // 'loading' | 'approved' | 'denied'
+    // 'loading' | 'approved' | 'pending_or_rejected' | 'customer'
+    const [status, setStatus] = useState('loading');
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (user) => {
             if (!user) {
-                setStatus('denied');
+                setStatus('pending_or_rejected'); // no user → send to driver login
                 return;
             }
             try {
-                const q = query(
-                    collection(db, 'drivers'),
-                    where('uid', '==', user.uid),
-                    where('status', '==', 'approved')
+                const snap = await getDocs(
+                    query(collection(db, 'drivers'), where('uid', '==', user.uid))
                 );
-                const snap = await getDocs(q);
-                setStatus(snap.empty ? 'denied' : 'approved');
+
+                if (snap.empty) {
+                    // No driver document — this is a regular customer
+                    setStatus('customer');
+                    return;
+                }
+
+                const driverStatus = snap.docs[0].data().status;
+                setStatus(driverStatus === 'approved' ? 'approved' : 'pending_or_rejected');
             } catch {
-                setStatus('denied');
+                setStatus('pending_or_rejected');
             }
         });
         return unsub;
@@ -40,15 +46,17 @@ function DriverRoute({ children }) {
                     <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center animate-pulse">
                         <span className="text-black font-black text-xl">R</span>
                     </div>
-                    <p className="text-white text-sm mt-2">Verifying driver access…</p>
+                    <p className="text-white text-sm">Verifying driver access…</p>
                 </div>
             </div>
         );
     }
 
-    if (status === 'denied') {
-        return <Navigate to="/driver/login" replace />;
-    }
+    // Regular customer tried to access a driver page
+    if (status === 'customer') return <Navigate to="/login?role=customer" replace />;
+
+    // Not approved (pending / rejected / not logged in)
+    if (status === 'pending_or_rejected') return <Navigate to="/driver/login" replace />;
 
     return children;
 }

@@ -91,6 +91,21 @@ function Register() {
                 <h1 className="text-2xl font-black">RideX</h1>
             </div>
 
+            {/* Role tabs */}
+            <div className="flex w-full max-w-md mb-4 border-b border-gray-800">
+                <button
+                    className="flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px border-yellow-400 text-white"
+                >
+                    Customer
+                </button>
+                <button
+                    onClick={() => navigate('/driver/login')}
+                    className="flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px border-transparent text-gray-500 hover:text-gray-300"
+                >
+                    Driver
+                </button>
+            </div>
+
             <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-md">
                 {verified ? (
                     <div className="text-center py-4">
@@ -110,6 +125,12 @@ function Register() {
                     </div>
                 ) : (
                     <>
+                        {/* Role badge */}
+                        <div className="inline-flex items-center gap-1.5 bg-gray-800 rounded-full px-3 py-1 mb-4">
+                            <span className="text-xs">🚗</span>
+                            <span className="text-xs text-gray-300 font-medium">Registering as Customer</span>
+                        </div>
+
                         <h2 className="text-2xl font-black mb-1">Create account</h2>
                         <p className="text-gray-500 text-sm mb-6">Join RideX today — it's free</p>
 

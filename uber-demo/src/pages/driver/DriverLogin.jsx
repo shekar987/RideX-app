@@ -203,6 +203,21 @@ export default function DriverLogin() {
 
             <div className="flex-1 flex items-center justify-center px-4 py-8">
                 <div className="w-full max-w-md">
+                    {/* Role tabs */}
+                    <div className="flex w-full mb-6 border-b border-gray-800">
+                        <button
+                            onClick={() => navigate('/login?role=customer')}
+                            className="flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px border-transparent text-gray-500 hover:text-gray-300"
+                        >
+                            Customer
+                        </button>
+                        <button
+                            className="flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px border-yellow-400 text-white"
+                        >
+                            Driver
+                        </button>
+                    </div>
+
                     {/* Logo */}
                     <div className="flex flex-col items-center mb-8">
                         <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center mb-3">
@@ -241,6 +256,11 @@ export default function DriverLogin() {
                     {/* ── LOGIN FORM ─────────────────────────────────────────── */}
                     {tab === 'login' && (
                         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                            {/* Role badge */}
+                            <div className="inline-flex items-center gap-1.5 bg-gray-800 rounded-full px-3 py-1 mb-4">
+                                <span className="text-xs">🎡</span>
+                                <span className="text-xs text-gray-300 font-medium">Signing in as Driver</span>
+                            </div>
                             <h2 className="text-lg font-black mb-5">Welcome back, Driver</h2>
 
                             {/* Status banners */}
@@ -322,6 +342,11 @@ export default function DriverLogin() {
                     {/* ── REGISTER FORM ──────────────────────────────────────── */}
                     {tab === 'register' && (
                         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                            {/* Role badge */}
+                            <div className="inline-flex items-center gap-1.5 bg-gray-800 rounded-full px-3 py-1 mb-4">
+                                <span className="text-xs">🎡</span>
+                                <span className="text-xs text-gray-300 font-medium">Registering as Driver</span>
+                            </div>
                             <h2 className="text-lg font-black mb-5">Become a Driver</h2>
 
                             {regSuccess ? (

@@ -53,18 +53,33 @@ function LandingPage() {
                         Book a ride in seconds. Track your driver in real time. Pay seamlessly — no cash needed.
                     </p>
 
-                    <div className="flex gap-4 mb-12">
+                    <div className="flex gap-4 mb-6">
                         <button
-                            onClick={() => navigate('/register')}
+                            onClick={() => navigate('/login?role=customer')}
                             className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20"
                         >
-                            Book a ride →
+                            Get Started →
                         </button>
                         <button
-                            onClick={() => navigate('/login')}
+                            onClick={() => navigate('/login?role=customer')}
                             className="px-8 py-4 bg-gray-900 text-white text-base font-semibold rounded-full hover:bg-gray-800 transition border border-gray-700"
                         >
                             Log in
+                        </button>
+                    </div>
+
+                    <div className="flex gap-3 mb-12">
+                        <button
+                            onClick={() => navigate('/login?role=customer')}
+                            className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-black text-sm font-black rounded-full hover:bg-yellow-300 transition"
+                        >
+                            🚗 I'm a Customer
+                        </button>
+                        <button
+                            onClick={() => navigate('/driver/login')}
+                            className="flex items-center gap-2 px-6 py-3 bg-black text-white text-sm font-bold rounded-full border border-yellow-400 hover:bg-yellow-400/10 transition"
+                        >
+                            🚘 I'm a Driver
                         </button>
                     </div>
 

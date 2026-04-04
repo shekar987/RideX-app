@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
 import { signOut, sendEmailVerification } from 'firebase/auth';
 
 function Login() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { login, resetPassword } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -111,6 +112,7 @@ function Login() {
     };
 
     const isLocked = lockoutSeconds > 0;
+    const role = searchParams.get('role') || 'customer';
 
     return (
         <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-4">
@@ -128,7 +130,33 @@ function Login() {
                 <h1 className="text-2xl font-black">RideX</h1>
             </div>
 
+            {/* Role tabs */}
+            <div className="flex w-full max-w-md mb-4 border-b border-gray-800">
+                <button
+                    onClick={() => navigate('/login?role=customer')}
+                    className={`flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px ${
+                        role === 'customer'
+                            ? 'border-yellow-400 text-white'
+                            : 'border-transparent text-gray-500 hover:text-gray-300'
+                    }`}
+                >
+                    Customer
+                </button>
+                <button
+                    onClick={() => navigate('/driver/login')}
+                    className="flex-1 py-2.5 text-sm font-bold transition border-b-2 -mb-px border-transparent text-gray-500 hover:text-gray-300"
+                >
+                    Driver
+                </button>
+            </div>
+
             <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-md">
+                {/* Role badge */}
+                <div className="inline-flex items-center gap-1.5 bg-gray-800 rounded-full px-3 py-1 mb-4">
+                    <span className="text-xs">🚗</span>
+                    <span className="text-xs text-gray-300 font-medium">Signing in as Customer</span>
+                </div>
+
                 <h2 className="text-2xl font-black mb-1">Welcome back</h2>
                 <p className="text-gray-500 text-sm mb-6">Log in to your account</p>
 
