@@ -157,7 +157,7 @@ export default function DriverLogin() {
             const snap = await getDocs(q);
 
             if (snap.empty) {
-                setLoginError('No driver account found. Please register first.');
+                setLoginError('No driver profile found for this account. Your registration may not have completed — please register again using the Register tab.');
                 setLoginLoading(false);
                 return;
             }
