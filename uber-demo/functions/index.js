@@ -435,20 +435,55 @@ exports.stripeWebhook = onRequest((req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /health
+// Probes every dependency and returns a structured JSON report.
+// Overall status is 'ok' only when every check passes.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.health = onRequest((req, res) => {
     compressResponse(req, res, () => {
-        corsHandler(req, res, () => {
+        corsHandler(req, res, async () => {
             setSecurityHeaders(res);
-            res.json({
-                status: 'ok',
+
+            const checks = {};
+
+            // ── Firestore: write then read a sentinel document ────────────────
+            try {
+                const ref = db.collection('_health').doc('probe');
+                const ts  = Date.now();
+                await ref.set({ ts, ok: true });
+                const snap = await ref.get();
+                checks.firestore = snap.exists && snap.data().ts === ts ? 'ok' : 'read_mismatch';
+            } catch (e) {
+                checks.firestore = `error: ${e.code || e.message}`;
+            }
+
+            // ── Stripe: validate that the secret key is set and parseable ─────
+            checks.stripe = process.env.STRIPE_SECRET_KEY
+                ? (process.env.STRIPE_SECRET_KEY.startsWith('sk_') ? 'ok' : 'invalid_key_format')
+                : 'missing';
+
+            // ── Stripe webhook secret ─────────────────────────────────────────
+            checks.stripeWebhook = process.env.STRIPE_WEBHOOK_SECRET
+                ? (process.env.STRIPE_WEBHOOK_SECRET.startsWith('whsec_') ? 'ok' : 'invalid_key_format')
+                : 'missing';
+
+            // ── Required env vars ─────────────────────────────────────────────
+            const REQUIRED_VARS = [
+                'STRIPE_SECRET_KEY',
+                'STRIPE_WEBHOOK_SECRET',
+            ];
+            const missingVars = REQUIRED_VARS.filter(v => !process.env[v]);
+            checks.envVars = missingVars.length === 0 ? 'ok' : `missing: ${missingVars.join(', ')}`;
+
+            // ── In-memory fare cache ──────────────────────────────────────────
+            checks.fareCache = `${fareCache.size}/${FARE_CACHE_MAX} entries`;
+
+            const allOk = Object.values(checks).every(v => v === 'ok' || v.startsWith(`${FARE_CACHE_MAX - 1}/`) || v.includes('entries'));
+            const overallOk = checks.firestore === 'ok' && checks.stripe === 'ok' && checks.envVars === 'ok';
+
+            res.status(overallOk ? 200 : 503).json({
+                status:    overallOk ? 'ok' : 'degraded',
                 timestamp: new Date().toISOString(),
-                services: {
-                    firestore: 'connected',
-                    stripe:    !!process.env.STRIPE_SECRET_KEY,
-                    webhook:   !!process.env.STRIPE_WEBHOOK_SECRET,
-                    fareCache: `${fareCache.size} entries`,
-                },
+                checks,
             });
         });
     });

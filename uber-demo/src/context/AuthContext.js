@@ -19,12 +19,6 @@ import { auth, db } from '../firebase';
 
 const AuthContext = createContext();
 
-const PLACEHOLDER_DRIVER = {
-    driverName: 'Driver TBD',
-    driverCar:  'Vehicle TBD',
-    driverRating: null,
-};
-
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS   = 15 * 60 * 1000;
 
@@ -131,22 +125,23 @@ export function AuthProvider({ children }) {
     const saveRide = useCallback(async (details) => {
         if (!user) return;
         const docRef = await addDoc(collection(db, 'rides'), {
-            userId:      user.uid,
-            userName:    user.displayName || user.email,
-            pickup:      details.pickup,
-            destination: details.destination,
-            price:       details.price,
-            rideType:    details.rideType,
-            distance:    details.distance,
-            duration:    details.duration,
-            passengers:  details.passengers,
-            status:      'confirmed',
-            driverName:  PLACEHOLDER_DRIVER.driverName,
-            driverCar:   PLACEHOLDER_DRIVER.driverCar,
-            driverRating: PLACEHOLDER_DRIVER.driverRating,
-            driverLat:   details.pickupLat,
-            driverLng:   details.pickupLng,
-            createdAt:   serverTimestamp(),
+            userId:         user.uid,
+            userName:       user.displayName || user.email,
+            pickup:         details.pickup,
+            pickupLat:      details.pickupLat,
+            pickupLng:      details.pickupLng,
+            destination:    details.destination,
+            destinationLat: details.destinationLat,
+            destinationLng: details.destinationLng,
+            price:          details.price,
+            rideType:       details.rideType,
+            distance:       details.distance,
+            duration:       details.duration,
+            passengers:     details.passengers,
+            status:         'confirmed',
+            driverId:       null,
+            driverName:     null,
+            createdAt:      serverTimestamp(),
         });
         return docRef.id;
     }, [user]);

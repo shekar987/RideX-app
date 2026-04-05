@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
-import { auth, db } from '../firebase';
+import { db } from '../firebase';
 
 // ── Status display map ────────────────────────────────────────────────────────
 const STATUS_LABELS = {
@@ -114,6 +113,7 @@ function RideCard({ ride }) {
 function RideHistory() {
     const navigate = useNavigate();
     const { logout, user } = useAuth();
+    const userId = user?.uid;
 
     // Fix 2 — Seed state from localStorage immediately so returning users see
     // their last rides before the first Firestore response arrives.
@@ -134,88 +134,58 @@ function RideHistory() {
     const [error, setError]     = useState('');
 
     useEffect(() => {
-        // Fix 3 — Wrap the Firestore subscription inside onAuthStateChanged so we
-        // only query after Firebase has fully restored the session.  Without this,
-        // a page refresh can trigger the query before auth is ready, returning an
-        // empty result set even though the user has ride history.
-        let firestoreUnsub = null;
+        if (!userId) {
+            setLoading(false);
+            return;
+        }
 
-        const authUnsub = onAuthStateChanged(auth, (firebaseUser) => {
-            if (!firebaseUser) {
-                // No authenticated user — nothing to load.
+        const q = query(
+            collection(db, 'rides'),
+            where('userId', '==', userId),
+            orderBy('createdAt', 'desc'),
+            limit(20),
+        );
+
+        const unsub = onSnapshot(
+            q,
+            (snapshot) => {
+                const data = snapshot.docs.map((d) => {
+                    const r = d.data();
+                    return {
+                        id:          d.id,
+                        pickup:      r.pickup,
+                        destination: r.destination,
+                        price:       r.price,
+                        rideType:    r.rideType,
+                        status:      r.status,
+                        distance:    r.distance,
+                        duration:    r.duration,
+                        passengers:  r.passengers,
+                        createdAt:   r.createdAt?.toMillis?.() ?? r.createdAt ?? 0,
+                    };
+                });
+
+                setRides(data);
                 setLoading(false);
-                return;
-            }
 
-            // Composite index required in Firebase Console:
-            //   Collection : rides
-            //   Fields     : userId (Ascending) + createdAt (Descending)
-            // Firestore returns a console error with a direct creation link if missing.
+                try {
+                    localStorage.setItem(LS_KEY, JSON.stringify(data));
+                } catch {}
+            },
+            () => {
+                try {
+                    const raw = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_FALLBACK);
+                    const local = JSON.parse(raw || '[]');
+                    setRides(local.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)));
+                } catch {
+                    setError('Could not load rides. Please try again.');
+                }
+                setLoading(false);
+            },
+        );
 
-            // Fix 1 — Server-side sort + limit so only the 20 most recent rides
-            // are transferred.  onSnapshot keeps the list live: status updates
-            // (e.g. confirmed → ride_started) push automatically.
-            const q = query(
-                collection(db, 'rides'),
-                where('userId', '==', firebaseUser.uid),
-                orderBy('createdAt', 'desc'),
-                limit(20),
-            );
-
-            firestoreUnsub = onSnapshot(
-                q,
-                (snapshot) => {
-                    const data = snapshot.docs.map((d) => {
-                        const r = d.data();
-                        return {
-                            id:          d.id,
-                            pickup:      r.pickup,
-                            destination: r.destination,
-                            price:       r.price,
-                            rideType:    r.rideType,
-                            status:      r.status,
-                            distance:    r.distance,
-                            duration:    r.duration,
-                            passengers:  r.passengers,
-                            // Firestore Timestamps have .toMillis(); plain numbers
-                            // (from the localStorage seed) pass through the fallback.
-                            createdAt:   r.createdAt?.toMillis?.() ?? r.createdAt ?? 0,
-                        };
-                    });
-
-                    setRides(data);
-                    setLoading(false);
-
-                    // Fix 2 — Keep the dedicated history cache up to date so the
-                    // next refresh pre-populates state before the network responds.
-                    try {
-                        localStorage.setItem(LS_KEY, JSON.stringify(data));
-                    } catch {}
-                },
-                () => {
-                    // Firestore rules not yet deployed or network error.
-                    // Fall back to whatever is already in state (seeded from
-                    // localStorage on mount above), then try refreshing from
-                    // the localStorage keys as a last resort.
-                    try {
-                        const raw = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_FALLBACK);
-                        const local = JSON.parse(raw || '[]');
-                        setRides(local.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)));
-                    } catch {
-                        setError('Could not load rides. Please try again.');
-                    }
-                    setLoading(false);
-                },
-            );
-        });
-
-        // Tear down both listeners when the component unmounts so we don't
-        // accumulate stale subscriptions or trigger state updates after unmount.
-        return () => {
-            authUnsub();
-            if (firestoreUnsub) firestoreUnsub();
-        };
-    }, []); // empty deps — set up once on mount, cleaned up on unmount
+        return unsub;
+    }, [userId]);
 
     return (
         <div className="min-h-screen bg-black text-white">

@@ -300,6 +300,7 @@ function BookRide() {
             destination: destination?.name?.split(',').slice(0, 2).join(','),
             price, rideType: selectedRide, distance, duration, passengers,
             pickupLat: pickup?.lat, pickupLng: pickup?.lng,
+            destinationLat: destination?.lat, destinationLng: destination?.lng,
         };
         let rideId = null;
         try {

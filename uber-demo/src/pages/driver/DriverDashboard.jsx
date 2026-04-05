@@ -233,7 +233,7 @@ function RideReceipt({ ride, onClose }) {
                         <span className="text-white font-bold">£{fare.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Platform fee — Amit (20%)</span>
+                        <span className="text-gray-400">Platform fee (20%)</span>
                         <span className="text-gray-400">−£{platformFee.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm border-t border-gray-800 pt-2">
@@ -523,7 +523,8 @@ export default function DriverDashboard() {
             });
         }, 1000);
         return () => clearInterval(timer);
-    }, [notification?.id]); // only reset timer when ride ID changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notification?.id]);
 
     // ── Action: Accept ride (Bug 4 — atomic transaction) ─────────────────────
     const handleAcceptRide = useCallback(async (ride) => {
@@ -1026,7 +1027,7 @@ export default function DriverDashboard() {
                                     <span className="text-yellow-400 font-bold">£{totalEarnings.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-400 text-sm">Platform — Amit (20%)</span>
+                                    <span className="text-gray-400 text-sm">Platform (20%)</span>
                                     <span className="text-gray-400 font-bold">£{platformCommission.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between border-t border-gray-800 pt-3">

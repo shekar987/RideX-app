@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     sendEmailVerification,
+    signOut,
     reload,
 } from 'firebase/auth';
 import {
@@ -47,6 +48,9 @@ export default function DriverLogin() {
     const [loginStatus, setLoginStatus]     = useState(''); // 'pending' | 'rejected' | 'unverified'
     const [unverifiedUser, setUnverifiedUser] = useState(null);
     const [resendCooldown, setResendCooldown] = useState(false);
+    const resendTimerRef = useRef(null);
+
+    useEffect(() => () => clearTimeout(resendTimerRef.current), []);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function mapAuthError(code) {
@@ -140,6 +144,7 @@ export default function DriverLogin() {
             if (!user.emailVerified) {
                 setLoginStatus('unverified');
                 setUnverifiedUser(user);
+                await signOut(auth).catch(() => {});
                 setLoginLoading(false);
                 return;
             }
@@ -180,10 +185,8 @@ export default function DriverLogin() {
         try {
             await sendEmailVerification(unverifiedUser);
             setResendCooldown(true);
-            setTimeout(() => setResendCooldown(false), 60_000);
-        } catch {
-            // ignore
-        }
+            resendTimerRef.current = setTimeout(() => setResendCooldown(false), 60_000);
+        } catch {}
     }
 
     // ── UI ────────────────────────────────────────────────────────────────────
