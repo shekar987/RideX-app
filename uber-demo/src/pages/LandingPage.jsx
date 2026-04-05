@@ -13,13 +13,7 @@ function LandingPage() {
                     </div>
                     <h1 className="text-xl font-black tracking-tight">RideX</h1>
                 </div>
-                <div className="flex gap-3 items-center">
-                    <button
-                        onClick={() => navigate('/driver/login')}
-                        className="px-5 py-2 text-sm text-yellow-400 border border-yellow-400/40 rounded-full hover:bg-yellow-400/10 transition hidden sm:block"
-                    >
-                        Drive with RideX
-                    </button>
+                <div className="flex gap-3">
                     <button
                         onClick={() => navigate('/login')}
                         className="px-5 py-2 text-sm text-white border border-gray-700 rounded-full hover:border-white transition"
@@ -53,33 +47,18 @@ function LandingPage() {
                         Book a ride in seconds. Track your driver in real time. Pay seamlessly — no cash needed.
                     </p>
 
-                    <div className="flex gap-4 mb-6">
+                    <div className="flex gap-4 mb-12">
                         <button
-                            onClick={() => navigate('/login?role=customer')}
+                            onClick={() => navigate('/register')}
                             className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20"
                         >
-                            Get Started →
+                            Book a ride →
                         </button>
                         <button
-                            onClick={() => navigate('/login?role=customer')}
+                            onClick={() => navigate('/login')}
                             className="px-8 py-4 bg-gray-900 text-white text-base font-semibold rounded-full hover:bg-gray-800 transition border border-gray-700"
                         >
                             Log in
-                        </button>
-                    </div>
-
-                    <div className="flex gap-3 mb-12">
-                        <button
-                            onClick={() => navigate('/login?role=customer')}
-                            className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-black text-sm font-black rounded-full hover:bg-yellow-300 transition"
-                        >
-                            🚗 I'm a Customer
-                        </button>
-                        <button
-                            onClick={() => navigate('/driver/login')}
-                            className="flex items-center gap-2 px-6 py-3 bg-black text-white text-sm font-bold rounded-full border border-yellow-400 hover:bg-yellow-400/10 transition"
-                        >
-                            🚘 I'm a Driver
                         </button>
                     </div>
 
@@ -100,21 +79,20 @@ function LandingPage() {
                     </div>
                 </div>
 
-                {/* Right — Fake Map Card */}
+                {/* Right — Map Card */}
                 <div className="flex-1 flex justify-center mt-12 lg:mt-0">
                     <div className="relative w-80">
-                        {/* Map Background */}
                         <div className="w-80 h-96 bg-gray-900 rounded-3xl overflow-hidden border border-gray-800 relative">
                             {/* Fake map grid */}
                             <div className="absolute inset-0 opacity-20">
                                 {[...Array(8)].map((_, i) => (
-                                    <div key={i} className="absolute border-gray-600" style={{
+                                    <div key={i} className="absolute" style={{
                                         left: `${i * 14}%`, top: 0, bottom: 0, width: '1px',
                                         borderLeft: '1px solid #4B5563'
                                     }} />
                                 ))}
                                 {[...Array(8)].map((_, i) => (
-                                    <div key={i} className="absolute border-gray-600" style={{
+                                    <div key={i} className="absolute" style={{
                                         top: `${i * 14}%`, left: 0, right: 0, height: '1px',
                                         borderTop: '1px solid #4B5563'
                                     }} />
@@ -125,18 +103,12 @@ function LandingPage() {
                             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 384">
                                 <path
                                     d="M 80 300 Q 120 200 160 180 Q 200 160 240 100"
-                                    stroke="#FACC15"
-                                    strokeWidth="3"
-                                    fill="none"
-                                    strokeDasharray="8 4"
+                                    stroke="#FACC15" strokeWidth="3" fill="none" strokeDasharray="8 4"
                                 />
-                                {/* Pickup dot */}
                                 <circle cx="80" cy="300" r="8" fill="#22C55E" />
                                 <circle cx="80" cy="300" r="14" fill="#22C55E" fillOpacity="0.2" />
-                                {/* Destination dot */}
                                 <circle cx="240" cy="100" r="8" fill="#EF4444" />
                                 <circle cx="240" cy="100" r="14" fill="#EF4444" fillOpacity="0.2" />
-                                {/* Car position */}
                                 <circle cx="160" cy="180" r="10" fill="#FACC15" />
                                 <circle cx="160" cy="180" r="18" fill="#FACC15" fillOpacity="0.2" />
                             </svg>
@@ -162,7 +134,6 @@ function LandingPage() {
                             </div>
                         </div>
 
-                        {/* Floating badge */}
                         <div className="absolute -top-3 -right-3 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
                             Driver nearby
                         </div>
@@ -184,22 +155,6 @@ function LandingPage() {
                             <p className="text-gray-500 text-sm">{f.desc}</p>
                         </div>
                     ))}
-                </div>
-            </div>
-
-            {/* Driver CTA banner */}
-            <div className="border-t border-gray-800">
-                <div className="max-w-7xl mx-auto px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-6">
-                    <div>
-                        <p className="text-white font-black text-xl mb-1">Want to earn with RideX?</p>
-                        <p className="text-gray-500 text-sm">Join our driver network — set your own hours, keep 80% of every fare.</p>
-                    </div>
-                    <button
-                        onClick={() => navigate('/driver/login')}
-                        className="shrink-0 px-8 py-3 bg-yellow-400 text-black font-black rounded-full hover:bg-yellow-300 transition text-sm"
-                    >
-                        Become a Driver →
-                    </button>
                 </div>
             </div>
         </div>
