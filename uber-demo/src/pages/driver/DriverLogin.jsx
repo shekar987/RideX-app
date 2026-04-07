@@ -172,49 +172,60 @@ function DriverLogin() {
         if (!formData.terms) { setError('You must accept the Terms & Conditions.'); return; }
 
         setLoading(true);
+        const timeout = (ms) => new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), ms)
+        );
         try {
-            const credential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+            const credential = await Promise.race([
+                createUserWithEmailAndPassword(auth, formData.email, formData.password),
+                timeout(15000),
+            ]);
             const user = credential.user;
 
-            // Write to Firestore FIRST — before AuthContext's onAuthStateChanged
-            // has a chance to sign out the unverified user and revoke the token.
-            // Firestore rules allow this create without auth (status === 'pending').
-            await setDoc(doc(db, 'drivers', user.uid), {
-                uid: user.uid,
-                name: formData.name,
-                email: formData.email,
-                phone: formData.phone,
-                city: formData.city,
-                country: formData.country,
-                vehicleType: formData.vehicleType,
-                vehicleMake: formData.vehicleMake,
-                vehicleReg: formData.vehicleReg,
-                vehicleYear: formData.vehicleYear,
-                licenceNumber: formData.licenceNumber,
-                profilePhoto: profilePhoto || '',
-                status: 'pending',
-                isOnline: false,
-                rating: 5.0,
-                totalRides: 0,
-                earnings: 0,
-                todayEarnings: 0,
-                weekEarnings: 0,
-                createdAt: serverTimestamp(),
-            });
+            // Write Firestore doc FIRST while token is fresh.
+            // Rules allow create without auth so this works even if AuthContext
+            // signs out the unverified user in the background.
+            await Promise.race([
+                setDoc(doc(db, 'drivers', user.uid), {
+                    uid: user.uid,
+                    name: formData.name,
+                    email: formData.email,
+                    phone: formData.phone,
+                    city: formData.city,
+                    country: formData.country,
+                    vehicleType: formData.vehicleType,
+                    vehicleMake: formData.vehicleMake,
+                    vehicleReg: formData.vehicleReg,
+                    vehicleYear: formData.vehicleYear,
+                    licenceNumber: formData.licenceNumber,
+                    profilePhoto: profilePhoto || '',
+                    status: 'pending',
+                    isOnline: false,
+                    rating: 5.0,
+                    totalRides: 0,
+                    earnings: 0,
+                    todayEarnings: 0,
+                    weekEarnings: 0,
+                    createdAt: serverTimestamp(),
+                }),
+                timeout(15000),
+            ]);
 
-            // Non-critical — don't block registration if these fail after AuthContext signs out
-            try { await updateProfile(user, { displayName: formData.name }); } catch { /* non-fatal */ }
-            try {
-                await sendEmailVerification(user, {
-                    url: window.location.origin + '/driver/login',
-                    handleCodeInApp: false,
-                });
-            } catch { /* non-fatal — user can request resend from login page */ }
+            // Fire-and-forget — don't await, can't block or hang the flow
+            updateProfile(user, { displayName: formData.name }).catch(() => {});
+            sendEmailVerification(user, {
+                url: window.location.origin + '/driver/login',
+                handleCodeInApp: false,
+            }).catch(() => {});
 
-            await signOut(auth).catch(() => {});
+            signOut(auth).catch(() => {});
             setSuccess('Registration successful! Please check your email to verify your account. Once verified, our team will review your application within 24–48 hours.');
         } catch (err) {
-            setError(firebaseErrorMessage(err.code));
+            if (err.message === 'timeout') {
+                setError('Request timed out. Please check your connection and try again.');
+            } else {
+                setError(firebaseErrorMessage(err.code));
+            }
         }
         setLoading(false);
     };
