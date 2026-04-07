@@ -8,7 +8,7 @@ import {
     sendPasswordResetEmail,
     signOut,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
@@ -201,7 +201,6 @@ function DriverLogin() {
             const user = credential.user;
 
             // Step 2 — send verification email and update profile WHILE AUTHENTICATED
-            // Use short timeouts — these are best-effort, not critical path
             try {
                 await withTimeout(
                     sendEmailVerification(user, {
@@ -211,54 +210,61 @@ function DriverLogin() {
                     8000, 'email'
                 );
             } catch { /* non-fatal */ }
+            updateProfile(user, { displayName: formData.name }).catch(() => {});
 
-            try {
-                await withTimeout(
-                    updateProfile(user, { displayName: formData.name }),
-                    8000, 'profile'
-                );
-            } catch { /* non-fatal */ }
-
-            // Step 3 — sign out EXPLICITLY before the Firestore write.
-            // This gives Firestore a clean unauthenticated state instead of a
-            // revoked/mid-transition token (which causes the SDK to retry and hang).
-            // Our rules allow unauthenticated creates: status=='pending' && uid is string.
+            // Step 3 — sign out before saving to Firestore
             await signOut(auth).catch(() => {});
 
-            // Step 4 — write driver profile to Firestore as unauthenticated request
+            // Step 4 — save driver profile via direct REST API (bypasses SDK auth issues)
+            const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+            const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers?documentId=${user.uid}`;
+            const s = (v) => ({ stringValue: String(v) });
+            const b = (v) => ({ booleanValue: v });
+            const n = (v) => ({ doubleValue: v });
+            const ts = () => ({ timestampValue: new Date().toISOString() });
+
             try {
-                await withTimeout(
-                    setDoc(doc(db, 'drivers', user.uid), {
-                        uid: user.uid,
-                        name: formData.name,
-                        email: formData.email,
-                        phone: formData.phone,
-                        city: formData.city,
-                        country: formData.country,
-                        vehicleType: formData.vehicleType,
-                        vehicleMake: formData.vehicleMake,
-                        vehicleReg: formData.vehicleReg,
-                        vehicleYear: formData.vehicleYear,
-                        licenceNumber: formData.licenceNumber,
-                        profilePhoto: profilePhoto || '',
-                        status: 'pending',
-                        isOnline: false,
-                        rating: 5.0,
-                        totalRides: 0,
-                        earnings: 0,
-                        todayEarnings: 0,
-                        weekEarnings: 0,
-                        createdAt: serverTimestamp(),
+                const res = await withTimeout(
+                    fetch(restUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            fields: {
+                                uid:          s(user.uid),
+                                name:         s(formData.name),
+                                email:        s(formData.email),
+                                phone:        s(formData.phone),
+                                city:         s(formData.city),
+                                country:      s(formData.country),
+                                vehicleType:  s(formData.vehicleType),
+                                vehicleMake:  s(formData.vehicleMake),
+                                vehicleReg:   s(formData.vehicleReg),
+                                vehicleYear:  s(formData.vehicleYear),
+                                licenceNumber: s(formData.licenceNumber),
+                                profilePhoto: s(profilePhoto || ''),
+                                status:       s('pending'),
+                                isOnline:     b(false),
+                                rating:       n(5.0),
+                                totalRides:   n(0),
+                                earnings:     n(0),
+                                todayEarnings: n(0),
+                                weekEarnings:  n(0),
+                                createdAt:    ts(),
+                            },
+                        }),
                     }),
-                    30000, 'firestore'
+                    20000, 'firestore'
                 );
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    const msg = body?.error?.message || `HTTP ${res.status}`;
+                    throw new Error(msg);
+                }
             } catch (err) {
                 if (err.message?.startsWith('timeout')) {
-                    setRegError('Profile save timed out. Please try logging in — your account may already be created.');
-                } else if (err.code === 'permission-denied') {
-                    setRegError('Permission denied. Please contact support@ridex.com.');
+                    setRegError('Profile save timed out. Please check your connection.');
                 } else {
-                    setRegError('Profile save failed. Try logging in — your account may already be created.');
+                    setRegError(`Profile save failed: ${err.message}. Contact support@ridex.com.`);
                 }
                 setLoading(false);
                 return;
