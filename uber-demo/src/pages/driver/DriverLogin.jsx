@@ -172,60 +172,88 @@ function DriverLogin() {
         if (!formData.terms) { setRegError('You must accept the Terms & Conditions.'); return; }
 
         setLoading(true);
-        const timeout = (ms) => new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), ms)
-        );
-        try {
-            const credential = await Promise.race([
-                createUserWithEmailAndPassword(auth, formData.email, formData.password),
-                timeout(15000),
+        const withTimeout = (promise, ms, label) =>
+            Promise.race([
+                promise,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(`timeout:${label}`)), ms)
+                ),
             ]);
+
+        try {
+            // Step 1 — create Firebase Auth account
+            let credential;
+            try {
+                credential = await withTimeout(
+                    createUserWithEmailAndPassword(auth, formData.email, formData.password),
+                    20000, 'auth'
+                );
+            } catch (err) {
+                if (err.message?.startsWith('timeout')) {
+                    setRegError('Could not reach Firebase. Check your internet connection and try again.');
+                } else {
+                    setRegError(firebaseErrorMessage(err.code));
+                }
+                setLoading(false);
+                return;
+            }
+
             const user = credential.user;
 
-            // Write Firestore doc FIRST while token is fresh.
-            // Rules allow create without auth so this works even if AuthContext
-            // signs out the unverified user in the background.
-            await Promise.race([
-                setDoc(doc(db, 'drivers', user.uid), {
-                    uid: user.uid,
-                    name: formData.name,
-                    email: formData.email,
-                    phone: formData.phone,
-                    city: formData.city,
-                    country: formData.country,
-                    vehicleType: formData.vehicleType,
-                    vehicleMake: formData.vehicleMake,
-                    vehicleReg: formData.vehicleReg,
-                    vehicleYear: formData.vehicleYear,
-                    licenceNumber: formData.licenceNumber,
-                    profilePhoto: profilePhoto || '',
-                    status: 'pending',
-                    isOnline: false,
-                    rating: 5.0,
-                    totalRides: 0,
-                    earnings: 0,
-                    todayEarnings: 0,
-                    weekEarnings: 0,
-                    createdAt: serverTimestamp(),
-                }),
-                timeout(15000),
-            ]);
+            // Step 2 — save driver profile to Firestore
+            // Rules allow create without auth, so this works even after
+            // AuthContext signs out the unverified user in the background.
+            try {
+                await withTimeout(
+                    setDoc(doc(db, 'drivers', user.uid), {
+                        uid: user.uid,
+                        name: formData.name,
+                        email: formData.email,
+                        phone: formData.phone,
+                        city: formData.city,
+                        country: formData.country,
+                        vehicleType: formData.vehicleType,
+                        vehicleMake: formData.vehicleMake,
+                        vehicleReg: formData.vehicleReg,
+                        vehicleYear: formData.vehicleYear,
+                        licenceNumber: formData.licenceNumber,
+                        profilePhoto: profilePhoto || '',
+                        status: 'pending',
+                        isOnline: false,
+                        rating: 5.0,
+                        totalRides: 0,
+                        earnings: 0,
+                        todayEarnings: 0,
+                        weekEarnings: 0,
+                        createdAt: serverTimestamp(),
+                    }),
+                    20000, 'firestore'
+                );
+            } catch (err) {
+                if (err.message?.startsWith('timeout')) {
+                    setRegError('Account created but profile save timed out. Please contact support@ridex.com with your email.');
+                } else if (err.code === 'permission-denied') {
+                    setRegError('Permission denied saving profile. Please contact support@ridex.com.');
+                } else {
+                    setRegError('Account created but profile save failed. Contact support@ridex.com.');
+                }
+                // Still sign out — the Auth account was created
+                signOut(auth).catch(() => {});
+                setLoading(false);
+                return;
+            }
 
-            // Fire-and-forget — don't await, can't block or hang the flow
+            // Step 3 — fire-and-forget, cannot block the flow
             updateProfile(user, { displayName: formData.name }).catch(() => {});
             sendEmailVerification(user, {
                 url: window.location.origin + '/driver/login',
                 handleCodeInApp: false,
             }).catch(() => {});
-
             signOut(auth).catch(() => {});
-            setRegistered(true); // show full-screen success
+
+            setRegistered(true);
         } catch (err) {
-            if (err.message === 'timeout') {
-                setRegError('Request timed out. Please check your connection and try again.');
-            } else {
-                setRegError(firebaseErrorMessage(err.code));
-            }
+            setRegError(firebaseErrorMessage(err?.code));
         }
         setLoading(false);
     };
