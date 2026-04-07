@@ -62,7 +62,8 @@ function DriverLogin() {
     const [mode, setMode] = useState('login'); // 'login' | 'register'
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
+    const [regError, setRegError] = useState(''); // error shown near register submit button
+    const [registered, setRegistered] = useState(false); // full-screen success state
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [resetSent, setResetSent] = useState(false);
@@ -157,19 +158,18 @@ function DriverLogin() {
 
     const handleRegisterSubmit = async (e) => {
         e.preventDefault();
-        setError('');
-        setSuccess('');
+        setRegError('');
 
-        if (!formData.name.trim()) { setError('Full name is required.'); return; }
-        if (!formData.email.trim()) { setError('Email is required.'); return; }
-        if (formData.password.length < 6) { setError('Password must be at least 6 characters.'); return; }
-        if (formData.password !== formData.confirmPassword) { setError('Passwords do not match.'); return; }
-        if (!formData.phone.trim()) { setError('Phone number is required.'); return; }
-        if (!formData.city.trim()) { setError('City is required.'); return; }
-        if (!formData.vehicleMake.trim()) { setError('Vehicle make & model is required.'); return; }
-        if (!formData.vehicleReg.trim()) { setError('Vehicle registration number is required.'); return; }
-        if (!formData.licenceNumber.trim()) { setError('Driving licence number is required.'); return; }
-        if (!formData.terms) { setError('You must accept the Terms & Conditions.'); return; }
+        if (!formData.name.trim()) { setRegError('Full name is required.'); return; }
+        if (!formData.email.trim()) { setRegError('Email is required.'); return; }
+        if (formData.password.length < 6) { setRegError('Password must be at least 6 characters.'); return; }
+        if (formData.password !== formData.confirmPassword) { setRegError('Passwords do not match.'); return; }
+        if (!formData.phone.trim()) { setRegError('Phone number is required.'); return; }
+        if (!formData.city.trim()) { setRegError('City is required.'); return; }
+        if (!formData.vehicleMake.trim()) { setRegError('Vehicle make & model is required.'); return; }
+        if (!formData.vehicleReg.trim()) { setRegError('Vehicle registration number is required.'); return; }
+        if (!formData.licenceNumber.trim()) { setRegError('Driving licence number is required.'); return; }
+        if (!formData.terms) { setRegError('You must accept the Terms & Conditions.'); return; }
 
         setLoading(true);
         const timeout = (ms) => new Promise((_, reject) =>
@@ -219,12 +219,12 @@ function DriverLogin() {
             }).catch(() => {});
 
             signOut(auth).catch(() => {});
-            setSuccess('Registration successful! Please check your email to verify your account. Once verified, our team will review your application within 24–48 hours.');
+            setRegistered(true); // show full-screen success
         } catch (err) {
             if (err.message === 'timeout') {
-                setError('Request timed out. Please check your connection and try again.');
+                setRegError('Request timed out. Please check your connection and try again.');
             } else {
-                setError(firebaseErrorMessage(err.code));
+                setRegError(firebaseErrorMessage(err.code));
             }
         }
         setLoading(false);
@@ -232,6 +232,50 @@ function DriverLogin() {
 
     const inputClass = 'w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400 transition text-sm';
     const labelClass = 'block text-xs text-gray-400 mb-1.5 font-medium';
+
+    // ── Full-screen success after registration ────────────────────────────────
+    if (registered) {
+        return (
+            <div className="min-h-screen bg-black text-white flex items-center justify-center px-4">
+                <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+                    <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                        <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                    </div>
+                    <h2 className="text-2xl font-black text-white mb-3">Registration Successful! 🎉</h2>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                        Please check your email to verify your account. Once verified, our team will review
+                        your application within <span className="text-yellow-400 font-bold">24–48 hours</span>.
+                    </p>
+                    <div className="bg-black rounded-xl p-4 mb-6 text-left space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-green-400">✓</span>
+                            <span className="text-gray-300">Account created</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-yellow-400">→</span>
+                            <span className="text-gray-300">Verify your email</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-gray-500">○</span>
+                            <span className="text-gray-500">Admin review (24–48 hrs)</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-gray-500">○</span>
+                            <span className="text-gray-500">Start driving!</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => { setRegistered(false); setMode('login'); }}
+                        className="w-full py-3 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition"
+                    >
+                        Go to Login
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-4 py-10">
@@ -269,13 +313,13 @@ function DriverLogin() {
                 {/* Login / Register toggle */}
                 <div className="flex bg-gray-900 border border-gray-800 rounded-xl p-1 mb-6">
                     <button
-                        onClick={() => { setMode('login'); setError(''); setSuccess(''); }}
+                        onClick={() => { setMode('login'); setError(''); setRegError(''); }}
                         className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${mode === 'login' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                         Login
                     </button>
                     <button
-                        onClick={() => { setMode('register'); setError(''); setSuccess(''); }}
+                        onClick={() => { setMode('register'); setError(''); setRegError(''); }}
                         className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${mode === 'register' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                         Register
@@ -296,7 +340,7 @@ function DriverLogin() {
                     {mode === 'login' ? 'Sign in to your driver account.' : 'Join the RideX driver community.'}
                 </p>
 
-                {/* Error / Success messages */}
+                {/* Login-level messages */}
                 {error && (
                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
                         <p className="text-red-400 text-sm">{error}</p>
@@ -312,11 +356,6 @@ function DriverLogin() {
                                 Resend verification email
                             </button>
                         )}
-                    </div>
-                )}
-                {success && (
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 mb-4">
-                        <p className="text-green-400 text-sm">{success}</p>
                     </div>
                 )}
                 {resetSent && (
@@ -385,7 +424,7 @@ function DriverLogin() {
                 )}
 
                 {/* ── REGISTER FORM ── */}
-                {mode === 'register' && !success && (
+                {mode === 'register' && (
                     <form onSubmit={handleRegisterSubmit} className="space-y-4">
                         {/* Personal */}
                         <p className="text-xs font-bold text-yellow-400 uppercase tracking-wider pt-1">Personal Info</p>
@@ -497,6 +536,13 @@ function DriverLogin() {
                             )}
                         </div>
                         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+
+                        {/* Register-level error — shown near submit button */}
+                        {regError && (
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                                <p className="text-red-400 text-sm">{regError}</p>
+                            </div>
+                        )}
 
                         {/* Terms */}
                         <div className="flex items-start gap-3 pt-1">
