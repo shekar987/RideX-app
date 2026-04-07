@@ -200,9 +200,32 @@ function DriverLogin() {
 
             const user = credential.user;
 
-            // Step 2 — save driver profile to Firestore
-            // Rules allow create without auth, so this works even after
-            // AuthContext signs out the unverified user in the background.
+            // Step 2 — send verification email and update profile WHILE AUTHENTICATED
+            // Use short timeouts — these are best-effort, not critical path
+            try {
+                await withTimeout(
+                    sendEmailVerification(user, {
+                        url: window.location.origin + '/driver/login',
+                        handleCodeInApp: false,
+                    }),
+                    8000, 'email'
+                );
+            } catch { /* non-fatal */ }
+
+            try {
+                await withTimeout(
+                    updateProfile(user, { displayName: formData.name }),
+                    8000, 'profile'
+                );
+            } catch { /* non-fatal */ }
+
+            // Step 3 — sign out EXPLICITLY before the Firestore write.
+            // This gives Firestore a clean unauthenticated state instead of a
+            // revoked/mid-transition token (which causes the SDK to retry and hang).
+            // Our rules allow unauthenticated creates: status=='pending' && uid is string.
+            await signOut(auth).catch(() => {});
+
+            // Step 4 — write driver profile to Firestore as unauthenticated request
             try {
                 await withTimeout(
                     setDoc(doc(db, 'drivers', user.uid), {
@@ -227,29 +250,19 @@ function DriverLogin() {
                         weekEarnings: 0,
                         createdAt: serverTimestamp(),
                     }),
-                    20000, 'firestore'
+                    30000, 'firestore'
                 );
             } catch (err) {
                 if (err.message?.startsWith('timeout')) {
-                    setRegError('Account created but profile save timed out. Please contact support@ridex.com with your email.');
+                    setRegError('Profile save timed out. Please try logging in — your account may already be created.');
                 } else if (err.code === 'permission-denied') {
-                    setRegError('Permission denied saving profile. Please contact support@ridex.com.');
+                    setRegError('Permission denied. Please contact support@ridex.com.');
                 } else {
-                    setRegError('Account created but profile save failed. Contact support@ridex.com.');
+                    setRegError('Profile save failed. Try logging in — your account may already be created.');
                 }
-                // Still sign out — the Auth account was created
-                signOut(auth).catch(() => {});
                 setLoading(false);
                 return;
             }
-
-            // Step 3 — fire-and-forget, cannot block the flow
-            updateProfile(user, { displayName: formData.name }).catch(() => {});
-            sendEmailVerification(user, {
-                url: window.location.origin + '/driver/login',
-                handleCodeInApp: false,
-            }).catch(() => {});
-            signOut(auth).catch(() => {});
 
             setRegistered(true);
         } catch (err) {
