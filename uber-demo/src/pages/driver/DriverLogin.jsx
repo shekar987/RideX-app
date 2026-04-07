@@ -176,12 +176,9 @@ function DriverLogin() {
             const credential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             const user = credential.user;
 
-            await updateProfile(user, { displayName: formData.name });
-            await sendEmailVerification(user, {
-                url: window.location.origin + '/driver/login',
-                handleCodeInApp: false,
-            });
-
+            // Write to Firestore FIRST — before AuthContext's onAuthStateChanged
+            // has a chance to sign out the unverified user and revoke the token.
+            // Firestore rules allow this create without auth (status === 'pending').
             await setDoc(doc(db, 'drivers', user.uid), {
                 uid: user.uid,
                 name: formData.name,
@@ -205,7 +202,16 @@ function DriverLogin() {
                 createdAt: serverTimestamp(),
             });
 
-            await signOut(auth);
+            // Non-critical — don't block registration if these fail after AuthContext signs out
+            try { await updateProfile(user, { displayName: formData.name }); } catch { /* non-fatal */ }
+            try {
+                await sendEmailVerification(user, {
+                    url: window.location.origin + '/driver/login',
+                    handleCodeInApp: false,
+                });
+            } catch { /* non-fatal — user can request resend from login page */ }
+
+            await signOut(auth).catch(() => {});
             setSuccess('Registration successful! Please check your email to verify your account. Once verified, our team will review your application within 24–48 hours.');
         } catch (err) {
             setError(firebaseErrorMessage(err.code));
