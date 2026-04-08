@@ -22,32 +22,6 @@ function FullScreenLoader() {
     );
 }
 
-function PendingPage({ onLogout }) {
-    return (
-        <div className="min-h-screen bg-black flex items-center justify-center px-4">
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-md text-center">
-                <div className="w-16 h-16 bg-yellow-400/10 border border-yellow-400/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <svg className="w-8 h-8 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </div>
-                <h2 className="text-2xl font-black text-white mb-3">Application Under Review</h2>
-                <p className="text-gray-400 text-sm leading-relaxed mb-8">
-                    Our team is reviewing your application. You will receive an email once approved.
-                    This usually takes 24–48 hours.
-                </p>
-                <button
-                    onClick={onLogout}
-                    className="w-full py-3 bg-gray-800 text-white font-bold rounded-xl hover:bg-gray-700 transition border border-gray-700"
-                >
-                    Logout
-                </button>
-            </div>
-        </div>
-    );
-}
-
 function RejectedPage({ onLogout }) {
     return (
         <div className="min-h-screen bg-black flex items-center justify-center px-4">
@@ -76,7 +50,7 @@ function RejectedPage({ onLogout }) {
 }
 
 function DriverRoute({ children }) {
-    const [state, setState] = useState('loading'); // loading | no-auth | pending | rejected | approved
+    const [state, setState] = useState('loading'); // loading | no-auth | rejected | approved
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (user) => {
@@ -91,9 +65,8 @@ function DriverRoute({ children }) {
                     return;
                 }
                 const status = snap.data().status;
-                if (status === 'pending') setState('pending');
-                else if (status === 'rejected') setState('rejected');
-                else if (status === 'approved') setState('approved');
+                if (status === 'rejected') setState('rejected');
+                else if (status === 'approved' || status === 'pending') setState('approved');
                 else setState('no-auth');
             } catch {
                 setState('no-auth');
@@ -109,7 +82,6 @@ function DriverRoute({ children }) {
 
     if (state === 'loading') return <FullScreenLoader />;
     if (state === 'no-auth') return <Navigate to="/driver/login" replace />;
-    if (state === 'pending') return <PendingPage onLogout={handleLogout} />;
     if (state === 'rejected') return <RejectedPage onLogout={handleLogout} />;
     return children;
 }

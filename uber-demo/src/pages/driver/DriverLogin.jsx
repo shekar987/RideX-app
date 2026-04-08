@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     signInWithEmailAndPassword,
@@ -14,7 +14,6 @@ import { auth, db } from '../../firebase';
 const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
 const VEHICLE_TYPES = ['Sedan', 'SUV', 'Van', 'Luxury', 'Motorbike'];
 const VEHICLE_YEARS = Array.from({ length: 10 }, (_, i) => 2024 - i);
-const MAX_PROFILE_PHOTO_BYTES = 350 * 1024;
 
 function firebaseErrorMessage(code) {
     const map = {
@@ -89,9 +88,6 @@ function DriverLogin() {
         licenceNumber: '',
         terms: false,
     });
-    const [profilePhoto, setProfilePhoto] = useState(null);
-    const fileRef = useRef(null);
-
     const handleLoginSubmit = async (e) => {
         e.preventDefault();
         setError('');
@@ -116,11 +112,6 @@ function DriverLogin() {
             }
 
             const status = snap.data().status;
-            if (status === 'pending') {
-                setError("Your account is pending admin approval. We'll notify you by email within 24-48 hours.");
-                setLoading(false);
-                return;
-            }
             if (status === 'rejected') {
                 setError('Your application was rejected. Contact support@ridex.com');
                 setLoading(false);
@@ -142,23 +133,6 @@ function DriverLogin() {
         } catch (err) {
             setError(firebaseErrorMessage(err.code));
         }
-    };
-
-    const handlePhotoChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (!file.type.startsWith('image/')) {
-            setRegError('Please upload a valid image file (JPG or PNG).');
-            return;
-        }
-        if (file.size > MAX_PROFILE_PHOTO_BYTES) {
-            setRegError('Profile photo must be 350KB or smaller.');
-            return;
-        }
-        setRegError('');
-        const reader = new FileReader();
-        reader.onloadend = () => setProfilePhoto(reader.result);
-        reader.readAsDataURL(file);
     };
 
     const handleRegisterChange = (e) => {
@@ -222,7 +196,7 @@ function DriverLogin() {
             } catch { /* non-fatal */ }
             updateProfile(user, { displayName: formData.name }).catch(() => {});
 
-            // Step 3 — save pending driver profile as the authenticated user.
+            // Step 3 — save approved driver profile as the authenticated user.
             try {
                 await withTimeout(
                     setDoc(doc(db, 'drivers', user.uid), {
@@ -237,10 +211,8 @@ function DriverLogin() {
                         vehicleReg: formData.vehicleReg.trim().toUpperCase(),
                         vehicleYear: String(formData.vehicleYear),
                         licenceNumber: formData.licenceNumber.trim().toUpperCase(),
-                        // Do not store base64 images in Firestore documents.
-                        // Large payloads can exceed doc size limits and cause write failures.
                         profilePhoto: '',
-                        status: 'pending',
+                        status: 'approved',
                         isOnline: false,
                         rating: 5.0,
                         totalRides: 0,
@@ -288,8 +260,8 @@ function DriverLogin() {
                     </div>
                     <h2 className="text-2xl font-black text-white mb-3">Registration Successful! 🎉</h2>
                     <p className="text-gray-400 text-sm leading-relaxed mb-6">
-                        Please check your email to verify your account. Once verified, our team will review
-                        your application within <span className="text-yellow-400 font-bold">24–48 hours</span>.
+                        Please check your email and verify your account. After verification, you can sign in
+                        and start using your driver dashboard.
                     </p>
                     <div className="bg-black rounded-xl p-4 mb-6 text-left space-y-2">
                         <div className="flex items-center gap-2 text-sm">
@@ -301,12 +273,8 @@ function DriverLogin() {
                             <span className="text-gray-300">Verify your email</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm">
-                            <span className="text-gray-500">○</span>
-                            <span className="text-gray-500">Admin review (24–48 hrs)</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <span className="text-gray-500">○</span>
-                            <span className="text-gray-500">Start driving!</span>
+                            <span className="text-green-400">✓</span>
+                            <span className="text-gray-300">Sign in and go to dashboard</span>
                         </div>
                     </div>
                     <button
@@ -561,24 +529,6 @@ function DriverLogin() {
                             <label className={labelClass}>Driving Licence Number</label>
                             <input name="licenceNumber" type="text" className={inputClass} placeholder="SMITH901157AB9CD" value={formData.licenceNumber} onChange={handleRegisterChange} required />
                         </div>
-
-                        {/* Photo */}
-                        <p className="text-xs font-bold text-yellow-400 uppercase tracking-wider pt-2">Profile Photo</p>
-                        <div
-                            onClick={() => fileRef.current?.click()}
-                            className="border-2 border-dashed border-gray-700 rounded-xl p-4 text-center cursor-pointer hover:border-yellow-400/50 transition"
-                        >
-                            {profilePhoto ? (
-                                <img src={profilePhoto} alt="Preview" className="w-20 h-20 rounded-full object-cover mx-auto" />
-                            ) : (
-                                <>
-                                    <p className="text-3xl mb-2">📷</p>
-                                    <p className="text-sm text-gray-400">Click to upload profile photo</p>
-                                    <p className="text-xs text-gray-600 mt-1">JPG, PNG — max 2MB</p>
-                                </>
-                            )}
-                        </div>
-                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
 
                         {/* Register-level error — shown near submit button */}
                         {regError && (
