@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { Navigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 
 function FullScreenLoader() {
@@ -107,10 +108,7 @@ function DriverRoute({ children }) {
     };
 
     if (state === 'loading') return <FullScreenLoader />;
-    if (state === 'no-auth') {
-        window.location.replace('/driver/login');
-        return <FullScreenLoader />;
-    }
+    if (state === 'no-auth') return <Navigate to="/driver/login" replace />;
     if (state === 'pending') return <PendingPage onLogout={handleLogout} />;
     if (state === 'rejected') return <RejectedPage onLogout={handleLogout} />;
     return children;

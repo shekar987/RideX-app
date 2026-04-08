@@ -8,7 +8,7 @@ import {
     sendPasswordResetEmail,
     signOut,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
@@ -212,54 +212,34 @@ function DriverLogin() {
             } catch { /* non-fatal */ }
             updateProfile(user, { displayName: formData.name }).catch(() => {});
 
-            // Step 3 — sign out before saving to Firestore
-            await signOut(auth).catch(() => {});
-
-            // Step 4 — save driver profile via direct REST API (bypasses SDK auth issues)
-            const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-            const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers?documentId=${user.uid}`;
-            const s = (v) => ({ stringValue: String(v) });
-            const b = (v) => ({ booleanValue: v });
-            const n = (v) => ({ doubleValue: v });
-            const ts = () => ({ timestampValue: new Date().toISOString() });
-
+            // Step 3 — save pending driver profile as the authenticated user.
             try {
-                const res = await withTimeout(
-                    fetch(restUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            fields: {
-                                uid:          s(user.uid),
-                                name:         s(formData.name),
-                                email:        s(formData.email),
-                                phone:        s(formData.phone),
-                                city:         s(formData.city),
-                                country:      s(formData.country),
-                                vehicleType:  s(formData.vehicleType),
-                                vehicleMake:  s(formData.vehicleMake),
-                                vehicleReg:   s(formData.vehicleReg),
-                                vehicleYear:  s(formData.vehicleYear),
-                                licenceNumber: s(formData.licenceNumber),
-                                profilePhoto: s(profilePhoto || ''),
-                                status:       s('pending'),
-                                isOnline:     b(false),
-                                rating:       n(5.0),
-                                totalRides:   n(0),
-                                earnings:     n(0),
-                                todayEarnings: n(0),
-                                weekEarnings:  n(0),
-                                createdAt:    ts(),
-                            },
-                        }),
+                await withTimeout(
+                    setDoc(doc(db, 'drivers', user.uid), {
+                        uid: user.uid,
+                        name: formData.name.trim(),
+                        email: formData.email.trim(),
+                        phone: formData.phone.trim(),
+                        city: formData.city.trim(),
+                        country: formData.country,
+                        vehicleType: formData.vehicleType,
+                        vehicleMake: formData.vehicleMake.trim(),
+                        vehicleReg: formData.vehicleReg.trim().toUpperCase(),
+                        vehicleYear: String(formData.vehicleYear),
+                        licenceNumber: formData.licenceNumber.trim().toUpperCase(),
+                        profilePhoto: profilePhoto || '',
+                        status: 'pending',
+                        isOnline: false,
+                        rating: 5.0,
+                        totalRides: 0,
+                        earnings: 0,
+                        todayEarnings: 0,
+                        weekEarnings: 0,
+                        createdAt: serverTimestamp(),
                     }),
-                    20000, 'firestore'
+                    20000,
+                    'firestore'
                 );
-                if (!res.ok) {
-                    const body = await res.json().catch(() => ({}));
-                    const msg = body?.error?.message || `HTTP ${res.status}`;
-                    throw new Error(msg);
-                }
             } catch (err) {
                 if (err.message?.startsWith('timeout')) {
                     setRegError('Profile save timed out. Please check your connection.');
@@ -270,6 +250,8 @@ function DriverLogin() {
                 return;
             }
 
+            // Step 4 — sign out and require email verification before login.
+            await signOut(auth).catch(() => {});
             setRegistered(true);
         } catch (err) {
             setRegError(firebaseErrorMessage(err?.code));

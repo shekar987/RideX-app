@@ -42,13 +42,12 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-            // Sign out users whose email is not yet verified so that a persisted
-            // Firebase session (e.g. after a page refresh) cannot bypass the
-            // verification check.  The signOut triggers a second callback with
-            // firebaseUser === null which falls through to the setUser / setLoading
-            // calls below — no extra loading flash.
+            // Keep unverified sessions authenticated for flows that need an ID token
+            // (e.g. creating pending driver applications), while gating app access
+            // through route guards that check `user.emailVerified`.
             if (firebaseUser && !firebaseUser.emailVerified) {
-                await signOut(auth);
+                setUser(firebaseUser);
+                setLoading(false);
                 return;
             }
             setUser(firebaseUser);

@@ -41,7 +41,7 @@ const allowedOrigins = rawOrigins
         ? ['http://localhost:3000']
         : _projectId
             ? [`https://${_projectId}.web.app`, `https://${_projectId}.firebaseapp.com`]
-            : true; // last resort: allow all — operator must set ALLOWED_ORIGINS
+            : [];
 
 const corsHandler = cors({
     origin: allowedOrigins,
@@ -407,8 +407,6 @@ exports.stripeWebhook = onRequest((req, res) => {
         return res.status(400).json({ error: 'Invalid webhook signature.' });
     }
 
-    res.json({ received: true });
-
     (async () => {
         const pi = event.data?.object;
         switch (event.type) {
@@ -419,18 +417,22 @@ exports.stripeWebhook = onRequest((req, res) => {
                     paymentStatus: 'paid',
                     paymentIntentId: pi.id,
                     paidAt: admin.firestore.FieldValue.serverTimestamp(),
-                }).catch(() => logger.error('Webhook: Firestore update failed', { rideId }));
+                });
                 break;
             }
             case 'payment_intent.payment_failed': {
                 const { rideId } = pi.metadata || {};
                 if (!rideId || !FIRESTORE_ID_RE.test(rideId)) break;
-                await db.collection('rides').doc(rideId).update({ paymentStatus: 'failed' }).catch(() => {});
+                await db.collection('rides').doc(rideId).update({ paymentStatus: 'failed' });
                 break;
             }
             default: break;
         }
-    })();
+        return res.json({ received: true });
+    })().catch((err) => {
+        logger.error('Webhook processing failed', { message: err?.message || 'unknown' });
+        return res.status(500).json({ error: 'Webhook processing failed' });
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -445,13 +447,11 @@ exports.health = onRequest((req, res) => {
 
             const checks = {};
 
-            // ── Firestore: write then read a sentinel document ────────────────
+            // ── Firestore: read a sentinel document only (no writes on health checks) ─
             try {
                 const ref = db.collection('_health').doc('probe');
-                const ts  = Date.now();
-                await ref.set({ ts, ok: true });
                 const snap = await ref.get();
-                checks.firestore = snap.exists && snap.data().ts === ts ? 'ok' : 'read_mismatch';
+                checks.firestore = snap.exists ? 'ok' : 'missing_probe';
             } catch (e) {
                 checks.firestore = `error: ${e.code || e.message}`;
             }

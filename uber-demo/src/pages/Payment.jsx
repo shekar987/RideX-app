@@ -13,6 +13,7 @@ const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 const FUNCTIONS_BASE_URL =
     process.env.REACT_APP_FUNCTIONS_BASE_URL ||
     `https://us-central1-${process.env.REACT_APP_FIREBASE_PROJECT_ID}.cloudfunctions.net`;
+const DEMO_MODE = process.env.REACT_APP_DEMO_MODE === 'true';
 
 const CARD_ELEMENT_OPTIONS = {
     hidePostalCode: true,
@@ -74,8 +75,7 @@ function PaymentForm({ price, rideDetails }) {
             return;
         }
 
-        // Step 3: Try the real backend.  If it is not deployed (demo / local dev),
-        // fall back to a simulated success so the full booking flow still works.
+        // Step 3: Try the real backend.
         try {
             const idToken = await auth.currentUser.getIdToken();
             const response = await fetch(`${FUNCTIONS_BASE_URL}/createPaymentIntent`, {
@@ -120,9 +120,13 @@ function PaymentForm({ price, rideDetails }) {
             setLoading(false);
 
         } catch {
-            // Backend not deployed — demo fallback.
-            await new Promise((r) => setTimeout(r, 1500));
-            navigate('/status', { state: { ride: rideDetails } });
+            if (DEMO_MODE) {
+                await new Promise((r) => setTimeout(r, 1200));
+                navigate('/status', { state: { ride: rideDetails } });
+                return;
+            }
+            setError('Payment service is currently unavailable. Please try again in a moment.');
+            setLoading(false);
         }
     };
 

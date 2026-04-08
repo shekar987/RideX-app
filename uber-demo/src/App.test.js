@@ -160,9 +160,9 @@ describe('Routing', () => {
         expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
     });
 
-    test('/driver/login renders driver portal', async () => {
+    test('/driver/login renders driver login page', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText(/driver portal/i)).toBeInTheDocument();
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
     });
 
     test('/login renders the login page', async () => {
@@ -187,15 +187,15 @@ describe('Login page', () => {
         expect(screen.getByPlaceholderText(/enter your password/i)).toBeInTheDocument();
     });
 
-    test('shows role tabs — Customer and Driver', async () => {
+    test('shows register link', async () => {
         renderAt('/login');
-        expect(await screen.findByText('Customer')).toBeInTheDocument();
-        expect(screen.getByText('Driver')).toBeInTheDocument();
+        expect(await screen.findByText(/don't have an account\?/i)).toBeInTheDocument();
+        expect(screen.getByText(/sign up/i)).toBeInTheDocument();
     });
 
-    test('shows "Signing in as Customer" badge', async () => {
+    test('renders login heading', async () => {
         renderAt('/login?role=customer');
-        expect(await screen.findByText(/signing in as customer/i)).toBeInTheDocument();
+        expect(await screen.findByText(/log in to your account/i)).toBeInTheDocument();
     });
 
     test('shows validation error when fields are empty', async () => {
@@ -283,15 +283,15 @@ describe('Register page', () => {
         expect(screen.getByPlaceholderText(/min\. 8 characters/i)).toBeInTheDocument();
     });
 
-    test('shows role tabs', async () => {
+    test('shows login link', async () => {
         renderAt('/register');
-        expect(await screen.findByText('Customer')).toBeInTheDocument();
-        expect(screen.getByText('Driver')).toBeInTheDocument();
+        expect(await screen.findByText(/already have an account\?/i)).toBeInTheDocument();
+        expect(screen.getByText(/log in/i)).toBeInTheDocument();
     });
 
-    test('shows "Registering as Customer" badge', async () => {
+    test('shows register tagline', async () => {
         renderAt('/register');
-        expect(await screen.findByText(/registering as customer/i)).toBeInTheDocument();
+        expect(await screen.findByText(/join ridex today/i)).toBeInTheDocument();
     });
 
     test('shows error when name is too short', async () => {
@@ -380,9 +380,9 @@ describe('Register page', () => {
 // SECTION 4 — Driver Login page
 // ═════════════════════════════════════════════════════════════════════════════
 describe('Driver Login page', () => {
-    test('renders Driver Portal heading', async () => {
+    test('renders driver login heading', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText(/driver portal/i)).toBeInTheDocument();
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
     });
 
     test('shows Sign In and Register tabs', async () => {
@@ -397,7 +397,7 @@ describe('Driver Login page', () => {
     test('shows role tabs — Customer and Driver', async () => {
         renderAt('/driver/login');
         expect(await screen.findByText('Customer')).toBeInTheDocument();
-        expect(screen.getByText('Driver')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /driver/i })).toBeInTheDocument();
     });
 
     test('shows "Signing in as Driver" badge', async () => {
@@ -410,8 +410,8 @@ describe('Driver Login page', () => {
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /register/i }));
         });
-        expect(await screen.findByPlaceholderText(/john smith/i)).toBeInTheDocument();
-        expect(screen.getByPlaceholderText(/\+1 555/i)).toBeInTheDocument();
+        expect(await screen.findByPlaceholderText(/james wilson/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/\+44 7700 900000/i)).toBeInTheDocument();
         expect(screen.getByPlaceholderText(/AB12 CDE/i)).toBeInTheDocument();
     });
 
@@ -420,7 +420,7 @@ describe('Driver Login page', () => {
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /register/i }));
         });
-        const select = await screen.findByRole('combobox');
+        const select = await screen.findByDisplayValue('Sedan');
         expect(select).toBeInTheDocument();
         expect(select).toHaveValue('Sedan');
     });
@@ -430,12 +430,12 @@ describe('Driver Login page', () => {
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /register/i }));
         });
-        fireEvent.change(await screen.findByPlaceholderText(/minimum 6/i), { target: { value: '123' } });
-        fireEvent.change(screen.getByPlaceholderText(/john smith/i), { target: { value: 'Test Driver' } });
-        fireEvent.change(screen.getByPlaceholderText(/driver@example\.com/i), { target: { value: 'd@test.com' } });
+        fireEvent.change((await screen.findAllByPlaceholderText(/••••••••/i))[0], { target: { value: '123' } });
+        fireEvent.change(screen.getByPlaceholderText(/james wilson/i), { target: { value: 'Test Driver' } });
+        fireEvent.change(screen.getByPlaceholderText(/you@example\.com/i), { target: { value: 'd@test.com' } });
         fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /submit application/i }));
+            fireEvent.click(screen.getByRole('button', { name: /create driver account/i }));
         });
         expect(await screen.findByText(/password must be at least 6/i)).toBeInTheDocument();
     });
@@ -449,13 +449,19 @@ describe('Driver Login page', () => {
         const registerTab = allButtons.find(b => b.textContent === 'Register');
         await act(async () => { fireEvent.click(registerTab); });
 
-        fireEvent.change(await screen.findByPlaceholderText(/john smith/i), { target: { value: 'Test Driver' } });
-        fireEvent.change(screen.getByPlaceholderText(/driver@example\.com/i), { target: { value: 'existing@test.com' } });
-        fireEvent.change(screen.getByPlaceholderText(/minimum 6/i), { target: { value: 'Password1' } });
-        fireEvent.change(screen.getByPlaceholderText(/\+1 555/i), { target: { value: '+441234567890' } });
+        fireEvent.change(await screen.findByPlaceholderText(/james wilson/i), { target: { value: 'Test Driver' } });
+        fireEvent.change(screen.getByPlaceholderText(/you@example\.com/i), { target: { value: 'existing@test.com' } });
+        const passwordFields = screen.getAllByPlaceholderText(/••••••••/i);
+        fireEvent.change(passwordFields[0], { target: { value: 'Password1!' } });
+        fireEvent.change(passwordFields[1], { target: { value: 'Password1!' } });
+        fireEvent.change(screen.getByPlaceholderText(/\+44 7700 900000/i), { target: { value: '+441234567890' } });
+        fireEvent.change(screen.getByPlaceholderText(/London/i), { target: { value: 'London' } });
+        fireEvent.change(screen.getByPlaceholderText(/Toyota Camry/i), { target: { value: 'Toyota Camry' } });
         fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
+        fireEvent.change(screen.getByPlaceholderText(/SMITH901157AB9CD/i), { target: { value: 'LIC123456' } });
+        fireEvent.click(screen.getByLabelText(/i agree to the/i));
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /submit application/i }));
+            fireEvent.click(screen.getByRole('button', { name: /create driver account/i }));
         });
         // mapAuthError maps 'auth/email-already-in-use' → 'An account with this email already exists.'
         expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
@@ -476,9 +482,10 @@ describe('Landing page', () => {
         expect(await screen.findByText(/i'm a driver/i)).toBeInTheDocument();
     });
 
-    test('renders Become a Driver CTA', async () => {
+    test('renders safety and booking feature cards', async () => {
         renderAt('/');
-        expect(await screen.findByText(/become a driver/i)).toBeInTheDocument();
+        expect(await screen.findByText(/instant booking/i)).toBeInTheDocument();
+        expect(screen.getByText(/safe & verified/i)).toBeInTheDocument();
     });
 
     test('renders stats section', async () => {
