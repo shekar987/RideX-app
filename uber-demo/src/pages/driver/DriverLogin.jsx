@@ -14,7 +14,7 @@ import { auth, db } from '../../firebase';
 const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
 const VEHICLE_TYPES = ['Sedan', 'SUV', 'Van', 'Luxury', 'Motorbike'];
 const VEHICLE_YEARS = Array.from({ length: 10 }, (_, i) => 2024 - i);
-const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024;
+const MAX_PROFILE_PHOTO_BYTES = 350 * 1024;
 
 function firebaseErrorMessage(code) {
     const map = {
@@ -152,7 +152,7 @@ function DriverLogin() {
             return;
         }
         if (file.size > MAX_PROFILE_PHOTO_BYTES) {
-            setRegError('Profile photo must be 2MB or smaller.');
+            setRegError('Profile photo must be 350KB or smaller.');
             return;
         }
         setRegError('');
@@ -237,7 +237,9 @@ function DriverLogin() {
                         vehicleReg: formData.vehicleReg.trim().toUpperCase(),
                         vehicleYear: String(formData.vehicleYear),
                         licenceNumber: formData.licenceNumber.trim().toUpperCase(),
-                        profilePhoto: profilePhoto || '',
+                        // Do not store base64 images in Firestore documents.
+                        // Large payloads can exceed doc size limits and cause write failures.
+                        profilePhoto: '',
                         status: 'pending',
                         isOnline: false,
                         rating: 5.0,
