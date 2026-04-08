@@ -14,6 +14,7 @@ import { auth, db } from '../../firebase';
 const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
 const VEHICLE_TYPES = ['Sedan', 'SUV', 'Van', 'Luxury', 'Motorbike'];
 const VEHICLE_YEARS = Array.from({ length: 10 }, (_, i) => 2024 - i);
+const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024;
 
 function firebaseErrorMessage(code) {
     const map = {
@@ -146,6 +147,15 @@ function DriverLogin() {
     const handlePhotoChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            setRegError('Please upload a valid image file (JPG or PNG).');
+            return;
+        }
+        if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+            setRegError('Profile photo must be 2MB or smaller.');
+            return;
+        }
+        setRegError('');
         const reader = new FileReader();
         reader.onloadend = () => setProfilePhoto(reader.result);
         reader.readAsDataURL(file);
@@ -237,12 +247,14 @@ function DriverLogin() {
                         weekEarnings: 0,
                         createdAt: serverTimestamp(),
                     }),
-                    20000,
+                    60000,
                     'firestore'
                 );
             } catch (err) {
                 if (err.message?.startsWith('timeout')) {
-                    setRegError('Profile save timed out. Please check your connection.');
+                    setRegError('Profile save is taking too long. Please try again in a moment.');
+                } else if (err.code === 'permission-denied') {
+                    setRegError('Profile save was denied by security rules. Please contact support.');
                 } else {
                     setRegError(`Profile save failed: ${err.message}. Contact support@ridex.com.`);
                 }
