@@ -315,8 +315,20 @@ function LoginForm() {
 // Handles new driver registration: collects all required details, creates a Firebase
 // Auth account, sends verification email, saves driver doc to Firestore with
 // status: 'pending', then signs out so the user must verify before logging in.
+//
+// IMPORTANT: In Firebase Console → Firestore Database → Rules
+// Change rules to this for testing (or set proper auth-based rules for production):
+// rules_version = '2';
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+//     match /{document=**} {
+//       allow read, write: if true;
+//     }
+//   }
+// }
 function RegisterForm({ onSuccess }) {
   // All registration form fields stored in a single object
+  // terms is included here so the new handleRegister function can check formData.terms
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -330,18 +342,17 @@ function RegisterForm({ onSuccess }) {
     vehicleReg: '',
     vehicleYear: '2020',
     licenceNumber: '',
+    terms: false,
   });
 
   // Show/hide toggles for password fields
-  const [showPw, setShowPw]       = useState(false);
+  const [showPw, setShowPw]         = useState(false);
   const [showConfPw, setShowConfPw] = useState(false);
 
-  // Terms checkbox state
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-
-  // UI feedback state
+  // UI feedback state — success lives inside this component so it always renders
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const [success, setSuccess] = useState('');
 
   // Update a single field in formData by key
   function setField(key, value) {
@@ -351,62 +362,102 @@ function RegisterForm({ onSuccess }) {
   // Password strength for the visual indicator bar
   const strength = getPasswordStrength(formData.password);
 
-  // Main register submit handler
-  // Steps: validate → create auth account → update profile → send verification
-  //        → save Firestore doc → sign out → show success → switch to login tab
-  async function handleSubmit(e) {
-    e.preventDefault();
+  // Main register handler — called by button onClick (not form onSubmit)
+  // so there is no risk of the browser swallowing the event or double-firing.
+  // Uses finally{} to guarantee the spinner always stops.
+  const handleRegister = async () => {
+    // Reset all messages before starting
     setError('');
+    setSuccess('');
 
-    // Step 1: Validate all fields are filled
-    const required = ['name', 'email', 'password', 'confirmPassword', 'phone',
-      'city', 'country', 'vehicleType', 'vehicleMake', 'vehicleReg',
-      'vehicleYear', 'licenceNumber'];
-    for (const key of required) {
-      if (!formData[key].toString().trim()) {
-        setError('Please fill in all fields.');
-        return;
-      }
+    console.log('Step 1: Starting registration...');
+
+    // Validate all required fields are filled
+    if (
+      !formData.name ||
+      !formData.email ||
+      !formData.password ||
+      !formData.confirmPassword ||
+      !formData.phone ||
+      !formData.city ||
+      !formData.country ||
+      !formData.vehicleType ||
+      !formData.vehicleMake ||
+      !formData.vehicleReg ||
+      !formData.vehicleYear ||
+      !formData.licenceNumber
+    ) {
+      setError('Please fill in all fields before registering.');
+      return;
     }
 
-    // Step 2: Check passwords match
+    // Check passwords match
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match.');
+      setError('Passwords do not match. Please try again.');
       return;
     }
 
-    // Step 3: Check terms checkbox is ticked
-    if (!agreedToTerms) {
-      setError('Please agree to the Terms & Conditions.');
+    // Check password length
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters.');
       return;
     }
 
+    // Check terms checkbox is ticked
+    if (!formData.terms) {
+      setError('Please agree to the Terms & Conditions to continue.');
+      return;
+    }
+
+    // Start loading — spinner shows, button disabled
     setLoading(true);
 
     try {
-      // Step 4: Create Firebase Auth account
-      const { user } = await createUserWithEmailAndPassword(auth, formData.email.trim(), formData.password);
+      console.log('Step 2: Creating Firebase Auth account...');
 
-      // Step 5: Update display name
-      await updateProfile(user, { displayName: formData.name.trim() });
+      // Step 1: Create Firebase Auth account
+      const result = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+      const user = result.user;
 
-      // Step 6: Send verification email
-      await sendEmailVerification(user);
+      console.log('Step 3: Auth account created:', user.uid);
 
-      // Step 7: Save driver document to Firestore
+      // Step 2: Update display name
+      await updateProfile(user, { displayName: formData.name });
+
+      console.log('Step 4: Sending verification email...');
+
+      // Step 3: Send verification email
+      // Wrapped in its own try/catch so a failed email does NOT block registration
+      try {
+        await sendEmailVerification(user, {
+          url: window.location.origin + '/driver/login',
+          handleCodeInApp: false,
+        });
+      } catch (emailError) {
+        // Don't block registration if email sending fails
+        console.warn('Verification email failed (non-blocking):', emailError.message);
+      }
+
+      console.log('Step 5: Saving to Firestore...');
+
+      // Step 4: Save driver document to Firestore
       // status: 'pending' means waiting for admin approval
       await setDoc(doc(db, 'drivers', user.uid), {
         uid: user.uid,
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        city: formData.city.trim(),
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        city: formData.city,
         country: formData.country,
         vehicleType: formData.vehicleType,
-        vehicleMake: formData.vehicleMake.trim(),
-        vehicleReg: formData.vehicleReg.trim(),
+        vehicleMake: formData.vehicleMake,
+        vehicleReg: formData.vehicleReg,
         vehicleYear: formData.vehicleYear,
-        licenceNumber: formData.licenceNumber.trim(),
+        licenceNumber: formData.licenceNumber,
         status: 'pending',
         isOnline: false,
         rating: 5.0,
@@ -417,20 +468,64 @@ function RegisterForm({ onSuccess }) {
         createdAt: serverTimestamp(),
       });
 
-      // Step 8: Sign out immediately (must verify email first)
+      console.log('Step 6: Firestore save complete');
+      console.log('Step 7: Signing out...');
+
+      // Step 5: Sign out immediately — user must verify email before logging in
       await signOut(auth);
 
-      // Step 9: Show success message and switch to login tab
-      onSuccess();
+      console.log('Step 8: Showing success message');
+
+      // Step 6: Show success message inside this component
+      setSuccess(
+        'Registration successful! Please check your email to verify your account. ' +
+        'Once verified, our team will review your application within 24-48 hours.'
+      );
+
+      // Step 7: Clear all form fields
+      setFormData({
+        name: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        phone: '',
+        city: '',
+        country: 'UK',
+        vehicleType: 'Sedan',
+        vehicleMake: '',
+        vehicleReg: '',
+        vehicleYear: '2020',
+        licenceNumber: '',
+        terms: false,
+      });
+
+      // Step 8: Switch to login tab after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+        onSuccess();
+      }, 3000);
+
     } catch (err) {
-      setError(getRegisterErrorMessage(err.code));
+      console.error('Registration error:', err.code, err.message);
+
+      // Handle Firebase specific errors with friendly messages
+      const errorMessages = {
+        'auth/email-already-in-use': 'This email is already registered. Please login instead.',
+        'auth/weak-password': 'Password must be at least 6 characters.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/network-request-failed': 'Network error. Please check your internet connection.',
+        'auth/too-many-requests': 'Too many attempts. Please try again later.',
+      };
+      setError(errorMessages[err.code] || `Registration failed: ${err.message}`);
+    } finally {
+      // Always stop loading spinner — whether success or error
       setLoading(false);
     }
-  }
+  };
 
   return (
     /* Registration form - allows new drivers to apply to join RideX */
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    <div className="flex flex-col gap-4">
 
       {/* Full Name */}
       <div className="flex flex-col gap-1">
@@ -609,8 +704,8 @@ function RegisterForm({ onSuccess }) {
       <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
-          checked={agreedToTerms}
-          onChange={e => setAgreedToTerms(e.target.checked)}
+          checked={formData.terms}
+          onChange={e => setField('terms', e.target.checked)}
           className="mt-0.5 accent-yellow-400 w-4 h-4 flex-shrink-0"
         />
         <span className="text-gray-400 text-sm leading-snug">
@@ -621,28 +716,37 @@ function RegisterForm({ onSuccess }) {
         </span>
       </label>
 
-      {/* Error message box */}
+      {/* Register button - disabled while loading to prevent double submission */}
+      <button
+        onClick={handleRegister}
+        disabled={loading}
+        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            Creating account...
+          </span>
+        ) : 'Create Account'}
+      </button>
+
+      {/* Show error message if registration fails */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-          {error}
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mt-4">
+          <p className="text-red-400 text-sm">{error}</p>
         </div>
       )}
 
-      {/* Register submit button with loading spinner */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {loading && (
-          <svg className="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-        )}
-        {loading ? 'Creating account…' : 'Register as Driver'}
-      </button>
-    </form>
+      {/* Show success message when registration completes */}
+      {success && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 mt-4">
+          <p className="text-green-400 text-sm">{success}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
