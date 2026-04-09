@@ -161,8 +161,14 @@ function LoginForm() {
       // Step 3: Sign in with Firebase Auth
       const { user } = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-      // Step 4: Reload user to get fresh email verification status
-      await auth.currentUser.reload();
+      // Step 4: Reload user to get fresh email verification status.
+      // Wrapped in try/catch — a 400 from accounts:lookup (e.g. stale token)
+      // must not kill the login flow; the emailVerified flag from sign-in is enough.
+      try {
+        await auth.currentUser.reload();
+      } catch (reloadErr) {
+        console.warn('reload() failed (non-fatal):', reloadErr.message);
+      }
 
       // Step 5: Check email verification
       if (!auth.currentUser.emailVerified) {
@@ -204,6 +210,7 @@ function LoginForm() {
       // Step 8: Navigate to dashboard if approved
       navigate('/driver/dashboard');
     } catch (err) {
+      console.error('Login error:', err.code, err.message);
       setError(getLoginErrorMessage(err.code));
       setLoading(false);
     }
