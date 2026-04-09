@@ -12,10 +12,6 @@ import {
   sendPasswordResetEmail,
   signOut
 } from 'firebase/auth';
-import {
-  doc,
-  getDoc,
-} from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -39,16 +35,6 @@ function getLoginErrorMessage(code) {
     'auth/invalid-credential': 'Invalid email or password. Please try again.',
   };
   return map[code] || 'Something went wrong. Please try again.';
-}
-
-// Convert Firebase Auth error codes to user-friendly messages for registration
-function getRegisterErrorMessage(code) {
-  const map = {
-    'auth/email-already-in-use': 'This email is already registered. Please login instead.',
-    'auth/weak-password': 'Password must be at least 6 characters.',
-    'auth/invalid-email': 'Please enter a valid email address.',
-  };
-  return map[code] || 'Registration failed. Please try again.';
 }
 
 // Determine password strength based on length
@@ -180,18 +166,32 @@ function LoginForm() {
         return;
       }
 
-      // Step 6: Check driver document in Firestore
-      const driverSnap = await getDoc(doc(db, 'drivers', user.uid));
+      // Step 6: Check driver document via REST API.
+      // The Firestore SDK reports "client is offline" after auth state changes,
+      // so we fetch directly over HTTP using the user's ID token instead.
+      const idToken   = await user.getIdToken();
+      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+      const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
 
-      if (!driverSnap.exists()) {
+      const restResponse = await fetch(restUrl, {
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
+
+      if (restResponse.status === 404) {
         await signOut(auth);
         setError('No driver account found. Please register first.');
         setLoading(false);
         return;
       }
 
-      // Step 7: Check driver approval status
-      const { status } = driverSnap.data();
+      if (!restResponse.ok) {
+        throw new Error(`Firestore REST error ${restResponse.status}`);
+      }
+
+      const driverData = await restResponse.json();
+
+      // Extract status field from Firestore REST response format
+      const status = driverData?.fields?.status?.stringValue;
 
       if (status === 'pending') {
         await signOut(auth);
