@@ -15,8 +15,6 @@ import {
 import {
   doc,
   getDoc,
-  setDoc,
-  serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
@@ -444,29 +442,50 @@ function RegisterForm({ onSuccess }) {
 
       console.log('Step 5: Saving to Firestore...');
 
-      // Step 4: Save driver document to Firestore
-      // status: 'pending' means waiting for admin approval
-      await setDoc(doc(db, 'drivers', user.uid), {
-        uid: user.uid,
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        city: formData.city,
-        country: formData.country,
-        vehicleType: formData.vehicleType,
-        vehicleMake: formData.vehicleMake,
-        vehicleReg: formData.vehicleReg,
-        vehicleYear: formData.vehicleYear,
-        licenceNumber: formData.licenceNumber,
-        status: 'pending',
-        isOnline: false,
-        rating: 5.0,
-        totalRides: 0,
-        earnings: 0,
-        todayEarnings: 0,
-        weekEarnings: 0,
-        createdAt: serverTimestamp(),
+      // Step 4: Save driver document via REST API instead of the Firestore SDK.
+      // The SDK's setDoc hangs after createUserWithEmailAndPassword because the
+      // onAuthStateChanged listener fires mid-write and leaves the SDK in an
+      // inconsistent auth state. Using fetch + the user's ID token bypasses that
+      // timing issue entirely.
+      const idToken    = await user.getIdToken();
+      const projectId  = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+      const restUrl    = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
+
+      const restResponse = await fetch(restUrl, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          fields: {
+            uid:           { stringValue: user.uid },
+            name:          { stringValue: formData.name },
+            email:         { stringValue: formData.email },
+            phone:         { stringValue: formData.phone },
+            city:          { stringValue: formData.city },
+            country:       { stringValue: formData.country },
+            vehicleType:   { stringValue: formData.vehicleType },
+            vehicleMake:   { stringValue: formData.vehicleMake },
+            vehicleReg:    { stringValue: formData.vehicleReg },
+            vehicleYear:   { stringValue: formData.vehicleYear },
+            licenceNumber: { stringValue: formData.licenceNumber },
+            status:        { stringValue: 'pending' },
+            isOnline:      { booleanValue: false },
+            rating:        { doubleValue: 5.0 },
+            totalRides:    { integerValue: '0' },
+            earnings:      { doubleValue: 0 },
+            todayEarnings: { doubleValue: 0 },
+            weekEarnings:  { doubleValue: 0 },
+            createdAt:     { timestampValue: new Date().toISOString() },
+          },
+        }),
       });
+
+      if (!restResponse.ok) {
+        const errData = await restResponse.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Firestore REST error ${restResponse.status}`);
+      }
 
       console.log('Step 6: Firestore save complete');
       console.log('Step 7: Signing out...');
