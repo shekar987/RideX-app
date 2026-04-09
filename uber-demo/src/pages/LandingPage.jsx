@@ -13,7 +13,14 @@ function LandingPage() {
                     </div>
                     <h1 className="text-xl font-black tracking-tight">RideX</h1>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 items-center">
+                    {/* Driver portal link */}
+                    <button
+                        onClick={() => navigate('/driver/login')}
+                        className="px-5 py-2 text-sm text-gray-400 hover:text-white transition"
+                    >
+                        Drive with us
+                    </button>
                     <button
                         onClick={() => navigate('/login')}
                         className="px-5 py-2 text-sm text-white border border-gray-700 rounded-full hover:border-white transition"
@@ -155,6 +162,80 @@ function LandingPage() {
                             <p className="text-gray-500 text-sm">{f.desc}</p>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Drive with RideX — driver acquisition section */}
+            <div className="border-t border-gray-800">
+                <div className="max-w-7xl mx-auto px-8 lg:px-16 py-16 flex flex-col lg:flex-row items-center justify-between gap-10">
+                    {/* Left: copy */}
+                    <div className="flex-1 max-w-xl">
+                        <p className="text-yellow-400 text-sm font-bold uppercase tracking-widest mb-3">For Drivers</p>
+                        <h2 className="text-4xl lg:text-5xl font-black leading-tight mb-4">
+                            Earn on your<br />
+                            <span className="text-yellow-400">own schedule.</span>
+                        </h2>
+                        <p className="text-gray-400 text-lg mb-8 leading-relaxed">
+                            Join thousands of drivers earning with RideX. Set your own hours, keep more of your fare, and get paid weekly.
+                        </p>
+
+                        {/* Driver perks */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                            {[
+                                { icon: '💰', stat: '£800+', label: 'Avg. weekly earnings' },
+                                { icon: '🕐', stat: 'Flexible', label: 'Work your own hours' },
+                                { icon: '⭐', stat: '24/7', label: 'Driver support' },
+                            ].map((p, i) => (
+                                <div key={i} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+                                    <div className="text-2xl mb-1">{p.icon}</div>
+                                    <p className="text-white font-black text-lg">{p.stat}</p>
+                                    <p className="text-gray-500 text-xs">{p.label}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* CTA buttons */}
+                        <div className="flex flex-wrap gap-3">
+                            <button
+                                onClick={() => navigate('/driver/login?tab=register')}
+                                className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20"
+                            >
+                                Become a Driver →
+                            </button>
+                            <button
+                                onClick={() => navigate('/driver/login')}
+                                className="px-8 py-4 bg-gray-900 text-white text-base font-semibold rounded-full hover:bg-gray-800 transition border border-gray-700"
+                            >
+                                Driver Login
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Right: driver illustration card */}
+                    <div className="flex-1 flex justify-center lg:justify-end">
+                        <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-sm">
+                            <div className="flex items-center gap-4 mb-6">
+                                <div className="w-14 h-14 bg-yellow-400 rounded-full flex items-center justify-center text-2xl">
+                                    🚗
+                                </div>
+                                <div>
+                                    <p className="text-white font-bold">Driver Portal</p>
+                                    <p className="text-gray-500 text-sm">Manage rides & earnings</p>
+                                </div>
+                            </div>
+                            {[
+                                { label: 'Today\'s earnings', value: '£124.50', color: 'text-green-400' },
+                                { label: 'Rides completed', value: '8 rides', color: 'text-yellow-400' },
+                                { label: 'Online status', value: '● Active', color: 'text-green-400' },
+                                { label: 'Rating', value: '4.9 ★', color: 'text-yellow-400' },
+                            ].map((row, i) => (
+                                <div key={i} className="flex justify-between items-center py-3 border-b border-gray-800 last:border-0">
+                                    <span className="text-gray-400 text-sm">{row.label}</span>
+                                    <span className={`font-bold text-sm ${row.color}`}>{row.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

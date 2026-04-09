@@ -3,7 +3,7 @@
 // Handles email verification, Firestore status checks, and pending/rejected/approved flows.
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -652,9 +652,13 @@ function RegisterForm({ onSuccess }) {
 // and either the LoginForm or RegisterForm based on active tab state.
 export default function DriverLogin() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // 'login' | 'register' — which form tab is currently visible
-  const [activeForm, setActiveForm] = useState('login');
+  // Defaults to 'register' if ?tab=register is in the URL (e.g. from "Become a Driver" on landing page)
+  const [activeForm, setActiveForm] = useState(
+    searchParams.get('tab') === 'register' ? 'register' : 'login'
+  );
 
   // Success message shown after a completed registration
   const [registerSuccess, setRegisterSuccess] = useState('');
