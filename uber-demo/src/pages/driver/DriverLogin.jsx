@@ -144,19 +144,18 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      // Step 3: Sign in with Firebase Auth
+      console.log('Login Step 1: Signing in...');
       const { user } = await signInWithEmailAndPassword(auth, email.trim(), password);
+      console.log('Login Step 2: Signed in, UID:', user.uid, '| emailVerified:', user.emailVerified);
 
-      // Step 4: Reload user to get fresh email verification status.
-      // Wrapped in try/catch — a 400 from accounts:lookup (e.g. stale token)
-      // must not kill the login flow; the emailVerified flag from sign-in is enough.
+      // Reload to get fresh emailVerified status — non-fatal if it fails
       try {
         await auth.currentUser.reload();
+        console.log('Login Step 3: Reload ok, emailVerified:', auth.currentUser.emailVerified);
       } catch (reloadErr) {
-        console.warn('reload() failed (non-fatal):', reloadErr.message);
+        console.warn('Login Step 3: reload() failed (non-fatal):', reloadErr.message);
       }
 
-      // Step 5: Check email verification
       if (!auth.currentUser.emailVerified) {
         setUnverifiedUser(auth.currentUser);
         await signOut(auth);
@@ -166,16 +165,16 @@ function LoginForm() {
         return;
       }
 
-      // Step 6: Check driver document via REST API.
-      // The Firestore SDK reports "client is offline" after auth state changes,
-      // so we fetch directly over HTTP using the user's ID token instead.
+      // Fetch driver document via REST API to avoid SDK "client is offline" bug
       const idToken   = await user.getIdToken();
       const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
       const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
+      console.log('Login Step 4: Fetching driver doc...', restUrl);
 
       const restResponse = await fetch(restUrl, {
         headers: { 'Authorization': `Bearer ${idToken}` },
       });
+      console.log('Login Step 5: REST response status:', restResponse.status);
 
       if (restResponse.status === 404) {
         await signOut(auth);
@@ -185,13 +184,16 @@ function LoginForm() {
       }
 
       if (!restResponse.ok) {
-        throw new Error(`Firestore REST error ${restResponse.status}`);
+        const errBody = await restResponse.json().catch(() => ({}));
+        console.error('Login Step 5 ERROR body:', errBody);
+        setError(`Could not load your driver profile (${restResponse.status}). Please try again.`);
+        setLoading(false);
+        return;
       }
 
       const driverData = await restResponse.json();
-
-      // Extract status field from Firestore REST response format
       const status = driverData?.fields?.status?.stringValue;
+      console.log('Login Step 6: Driver status:', status);
 
       if (status === 'pending') {
         await signOut(auth);
@@ -207,8 +209,17 @@ function LoginForm() {
         return;
       }
 
-      // Step 8: Navigate to dashboard if approved
-      navigate('/driver/dashboard');
+      if (status === 'approved') {
+        console.log('Login Step 7: Approved — navigating to dashboard');
+        navigate('/driver/dashboard');
+        return;
+      }
+
+      // Unexpected status value
+      console.warn('Login Step 7: Unexpected status value:', status);
+      setError(`Unexpected account status: "${status}". Contact support@ridex.com`);
+      setLoading(false);
+
     } catch (err) {
       console.error('Login error:', err.code, err.message);
       setError(getLoginErrorMessage(err.code));
