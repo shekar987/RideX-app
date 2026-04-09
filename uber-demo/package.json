@@ -12,7 +12,7 @@
     "@testing-library/user-event": "^13.5.0",
     "ajv": "^8.18.0",
     "firebase": "^12.11.0",
-    "mapbox-gl": "^3.20.0",
+    "mapbox-gl": "^3.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.2",

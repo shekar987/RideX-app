@@ -269,17 +269,6 @@ function PaymentForm({ price, rideDetails }) {
                         </div>
 
                         <div className="border-t border-gray-800 pt-4 mb-4">
-                            <div className="flex items-center gap-3 mb-4 bg-black/50 rounded-xl p-3">
-                                <div className="w-10 h-10 bg-yellow-400 rounded-full flex items-center justify-center">👨</div>
-                                <div>
-                                    <p className="text-sm font-semibold">{rideDetails?.driverName || 'Driver'}</p>
-                                    <p className="text-xs text-gray-500">
-                                        {rideDetails?.driverCar || 'Vehicle'}
-                                        {rideDetails?.driverRating ? ` • ★ ${rideDetails.driverRating}` : ''}
-                                    </p>
-                                </div>
-                            </div>
-
                             <div className="space-y-2 mb-4">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-500">{rideDetails?.rideType || 'Economy'} ride</span>

@@ -62,21 +62,6 @@ function LandingPage() {
                         </button>
                     </div>
 
-                    <div className="flex gap-4 mb-12">
-                        <button
-                            onClick={() => navigate('/register')}
-                            className="flex-1 py-3 bg-yellow-400 text-black font-black rounded-full hover:bg-yellow-300 transition"
-                        >
-                            🧑 I'm a Customer
-                        </button>
-                        <button
-                            onClick={() => navigate('/driver/login')}
-                            className="flex-1 py-3 bg-gray-900 text-white font-black rounded-full border border-yellow-400 hover:bg-gray-800 transition"
-                        >
-                            🚗 I'm a Driver
-                        </button>
-                    </div>
-
                     {/* Stats */}
                     <div className="grid grid-cols-3 gap-6 border-t border-gray-800 pt-8">
                         <div>

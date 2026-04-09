@@ -3,21 +3,20 @@ import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const STEPS = [
-  { label: 'Ride Confirmed', icon: '✅', desc: 'Looking for a driver...' },
-  { label: 'Driver Assigned', icon: '🚗', desc: 'Driver is on his way to you' },
-  { label: 'Driver Arriving', icon: '📍', desc: 'Driver is 2 minutes away' },
+  { label: 'Ride Confirmed', icon: '✅', desc: 'Your ride is confirmed' },
+  { label: 'En Route', icon: '🚗', desc: 'On the way to pick you up' },
   { label: 'Ride Started', icon: '🛣️', desc: 'Enjoy your ride!' },
   { label: 'Arrived', icon: '🏁', desc: 'You have reached your destination' },
 ];
 
-// Map Firestore status strings to the UI step index (0–4).
+// Map Firestore status strings to the UI step index (0–3).
 const STATUS_MAP = {
   confirmed: 0,
   driver_assigned: 1,
-  driver_arriving: 2,
-  ride_started: 3,
-  arrived: 4,
-  completed: 4,
+  driver_arriving: 1,
+  ride_started: 2,
+  arrived: 3,
+  completed: 3,
 };
 
 function RideStatus() {
@@ -88,30 +87,8 @@ function RideStatus() {
 
       <div className="px-4 py-8">
         <div className="max-w-md mx-auto">
-          {/* Driver Card */}
+          {/* Current Status */}
           <div className="bg-gray-900 rounded-2xl p-6 mb-8">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 bg-yellow-400 rounded-full flex items-center justify-center text-2xl">
-                👨
-              </div>
-              <div>
-                <p className="font-bold text-lg">{(liveRide || rideDetails).driverName || 'Driver TBD'}</p>
-                <p className="text-gray-400 text-sm">{(liveRide || rideDetails).driverCar || 'Vehicle TBD'}</p>
-                {(liveRide || rideDetails).driverRating && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <span className="text-yellow-400">★</span>
-                    <span className="text-sm">{(liveRide || rideDetails).driverRating}</span>
-                  </div>
-                )}
-              </div>
-              <div className="ml-auto">
-                <div className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center text-xl cursor-pointer hover:bg-gray-700">
-                  📞
-                </div>
-              </div>
-            </div>
-
-            {/* Current Status */}
             <div className="bg-black rounded-xl p-4 text-center">
               <p className="text-4xl mb-2">{STEPS[status].icon}</p>
               <p className="text-xl font-bold text-yellow-400">{STEPS[status].label}</p>
