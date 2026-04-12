@@ -11,8 +11,9 @@ const BookRide    = lazy(() => import('./pages/BookRide'));
 const Payment     = lazy(() => import('./pages/Payment'));
 const RideStatus  = lazy(() => import('./pages/RideStatus'));
 const RideHistory = lazy(() => import('./pages/RideHistory'));
-// Import driver login page
-const DriverLogin = lazy(() => import('./pages/driver/DriverLogin'));
+// Import driver pages
+const DriverLogin     = lazy(() => import('./pages/driver/DriverLogin'));
+const DriverDashboard = lazy(() => import('./pages/driver/DriverDashboard'));
 
 // ── Page-level loading skeleton ───────────────────────────────────────────────
 // Shown while a route chunk is downloading (typically < 200 ms on broadband,
@@ -51,8 +52,9 @@ export function AppRoutes() {
                 <Route path="/payment"  element={<ProtectedRoute><Payment /></ProtectedRoute>} />
                 <Route path="/status"   element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
                 <Route path="/history"      element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
-                <Route path="/driver/login" element={<DriverLogin />} />
-                <Route path="*"            element={<Navigate to="/" replace />} />
+                <Route path="/driver/login"      element={<DriverLogin />} />
+                <Route path="/driver/dashboard" element={<DriverDashboard />} />
+                <Route path="*"                 element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
     );

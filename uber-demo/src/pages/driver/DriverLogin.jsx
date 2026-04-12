@@ -12,6 +12,7 @@ import {
   sendPasswordResetEmail,
   signOut
 } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -144,18 +145,21 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      console.log('Login Step 1: Signing in...');
-      const { user } = await signInWithEmailAndPassword(auth, email.trim(), password);
-      console.log('Login Step 2: Signed in, UID:', user.uid, '| emailVerified:', user.emailVerified);
+      // Step 1: Sign in
+      const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = result.user;
 
-      // Reload to get fresh emailVerified status — non-fatal if it fails
+      // Step 2: Reload to get fresh data
       try {
-        await auth.currentUser.reload();
-        console.log('Login Step 3: Reload ok, emailVerified:', auth.currentUser.emailVerified);
+        await user.reload();
       } catch (reloadErr) {
-        console.warn('Login Step 3: reload() failed (non-fatal):', reloadErr.message);
+        console.warn('reload() non-fatal:', reloadErr.message);
       }
 
+      // Step 3: Wait for auth state to fully settle
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 4: Check email verified
       if (!auth.currentUser.emailVerified) {
         setUnverifiedUser(auth.currentUser);
         await signOut(auth);
@@ -165,59 +169,42 @@ function LoginForm() {
         return;
       }
 
-      // Fetch driver document via REST API to avoid SDK "client is offline" bug
-      const idToken   = await user.getIdToken();
-      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-      const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
-      console.log('Login Step 4: Fetching driver doc...', restUrl);
+      // Step 5: Fetch driver document from Firestore
+      const driverDoc = await getDoc(doc(db, 'drivers', user.uid));
 
-      const restResponse = await fetch(restUrl, {
-        headers: { 'Authorization': `Bearer ${idToken}` },
-      });
-      console.log('Login Step 5: REST response status:', restResponse.status);
-
-      if (restResponse.status === 404) {
+      // Step 6: Check document exists
+      if (!driverDoc.exists()) {
         await signOut(auth);
         setError('No driver account found. Please register first.');
         setLoading(false);
         return;
       }
 
-      if (!restResponse.ok) {
-        const errBody = await restResponse.json().catch(() => ({}));
-        console.error('Login Step 5 ERROR body:', errBody);
-        setError(`Could not load your driver profile (${restResponse.status}). Please try again.`);
-        setLoading(false);
-        return;
-      }
+      // Step 7: Check approval status
+      const driverData = driverDoc.data();
 
-      const driverData = await restResponse.json();
-      const status = driverData?.fields?.status?.stringValue;
-      console.log('Login Step 6: Driver status:', status);
-
-      if (status === 'pending') {
+      if (driverData.status === 'pending') {
         await signOut(auth);
         setWarning('Your account is pending admin approval. We will notify you within 24-48 hours.');
         setLoading(false);
         return;
       }
 
-      if (status === 'rejected') {
+      if (driverData.status === 'rejected') {
         await signOut(auth);
-        setError('Your application was rejected. Contact support@ridex.com');
+        setError('Your application was rejected. Please contact support@ridex.com');
         setLoading(false);
         return;
       }
 
-      if (status === 'approved') {
-        console.log('Login Step 7: Approved — navigating to dashboard');
+      if (driverData.status === 'approved') {
+        // Navigate to driver dashboard
         navigate('/driver/dashboard');
         return;
       }
 
-      // Unexpected status value
-      console.warn('Login Step 7: Unexpected status value:', status);
-      setError(`Unexpected account status: "${status}". Contact support@ridex.com`);
+      // Fallback for unexpected status
+      setError(`Unexpected account status: "${driverData.status}". Contact support@ridex.com`);
       setLoading(false);
 
     } catch (err) {
