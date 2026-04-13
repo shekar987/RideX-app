@@ -12,8 +12,7 @@ import {
   sendPasswordResetEmail,
   signOut
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
+import { auth } from '../../firebase';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -169,19 +168,37 @@ function LoginForm() {
         return;
       }
 
-      // Step 5: Fetch driver document from Firestore
-      const driverDoc = await getDoc(doc(db, 'drivers', user.uid));
+      // Step 5: Fetch driver document via REST API.
+      // The Firestore SDK stays "offline" after auth state changes so we use
+      // fetch + ID token directly — same approach as the registration save.
+      const idToken   = await user.getIdToken();
+      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+      const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
+
+      const restRes = await fetch(restUrl, {
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
 
       // Step 6: Check document exists
-      if (!driverDoc.exists()) {
+      if (restRes.status === 404) {
         await signOut(auth);
         setError('No driver account found. Please register first.');
         setLoading(false);
         return;
       }
 
+      if (!restRes.ok) {
+        const body = await restRes.json().catch(() => ({}));
+        throw new Error(body?.error?.message || `Server error ${restRes.status}`);
+      }
+
+      const json = await restRes.json();
+
       // Step 7: Check approval status
-      const driverData = driverDoc.data();
+      // Firestore REST API wraps values as { stringValue: '...' }
+      const driverData = {
+        status: json?.fields?.status?.stringValue,
+      };
 
       if (driverData.status === 'pending') {
         await signOut(auth);
