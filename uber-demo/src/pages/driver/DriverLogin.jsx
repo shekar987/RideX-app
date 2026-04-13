@@ -33,6 +33,7 @@ function getLoginErrorMessage(code) {
     'auth/invalid-email': 'Please enter a valid email address.',
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
     'auth/invalid-credential': 'Invalid email or password. Please try again.',
+    'unavailable': 'Connection issue. Please check your internet and try again.',
   };
   return map[code] || 'Something went wrong. Please try again.';
 }
@@ -148,15 +149,18 @@ function LoginForm() {
       const result = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = result.user;
 
-      // Step 2: Reload to get fresh data
+      // Step 2: Grab the ID token NOW — immediately after sign-in, before any
+      // auth-state listeners fire and before the Firestore SDK tries to
+      // reconnect (which throws "unavailable"). Using the token later is safe.
+      const idToken   = await user.getIdToken();
+      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+
+      // Step 3: Reload to get fresh emailVerified flag (non-fatal)
       try {
         await user.reload();
       } catch (reloadErr) {
         console.warn('reload() non-fatal:', reloadErr.message);
       }
-
-      // Step 3: Wait for auth state to fully settle
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Step 4: Check email verified
       if (!auth.currentUser.emailVerified) {
@@ -169,10 +173,8 @@ function LoginForm() {
       }
 
       // Step 5: Fetch driver document via REST API.
-      // The Firestore SDK stays "offline" after auth state changes so we use
-      // fetch + ID token directly — same approach as the registration save.
-      const idToken   = await user.getIdToken();
-      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+      // The Firestore SDK reports "client is offline" after auth-state changes.
+      // We bypass it entirely with a plain fetch using the token grabbed above.
       const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
 
       const restRes = await fetch(restUrl, {
