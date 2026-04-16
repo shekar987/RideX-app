@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import DriverRoute from './components/DriverRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // ── Code-split every route ────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ export function AppRoutes() {
                 <Route path="/status"   element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
                 <Route path="/history"      element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
                 <Route path="/driver/login"      element={<DriverLogin />} />
-                <Route path="/driver/dashboard" element={<DriverDashboard />} />
+                <Route path="/driver/dashboard" element={<DriverRoute><DriverDashboard /></DriverRoute>} />
                 <Route path="*"                 element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
