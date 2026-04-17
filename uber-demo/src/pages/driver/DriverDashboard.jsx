@@ -1014,14 +1014,43 @@ export default function DriverDashboard() {
   }, []);
 
   // ── Auth + driver data ──
+  // Uses the Firestore REST API (not SDK) to avoid the "client is offline"
+  // error that the SDK throws immediately after onAuthStateChanged fires.
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async user => {
       if (!user) { navigate('/driver/login'); return; }
       try {
-        const driverDoc = await getDoc(doc(db, 'drivers', user.uid));
-        if (!driverDoc.exists()) { navigate('/driver/login'); return; }
-        setDriver({ uid: user.uid, ...driverDoc.data() });
-        setIsOnline(driverDoc.data().isOnline || false);
+        const idToken   = await user.getIdToken();
+        const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+        const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
+
+        const res = await fetch(restUrl, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+
+        if (res.status === 404) { navigate('/driver/login'); return; }
+        if (!res.ok) throw new Error(`Firestore REST ${res.status}`);
+
+        const json   = await res.json();
+        const fields = json.fields || {};
+
+        // Convert Firestore REST field format { stringValue, doubleValue, … } → plain JS object
+        const parse = v => {
+          if (!v) return undefined;
+          if ('stringValue'  in v) return v.stringValue;
+          if ('doubleValue'  in v) return v.doubleValue;
+          if ('integerValue' in v) return Number(v.integerValue);
+          if ('booleanValue' in v) return v.booleanValue;
+          if ('timestampValue' in v) return { toDate: () => new Date(v.timestampValue) };
+          return undefined;
+        };
+
+        const data = Object.fromEntries(
+          Object.entries(fields).map(([k, v]) => [k, parse(v)])
+        );
+
+        setDriver({ uid: user.uid, ...data });
+        setIsOnline(data.isOnline || false);
       } catch (_) {
         navigate('/driver/login');
       }
