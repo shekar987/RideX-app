@@ -11,7 +11,7 @@ import {
 
 import { auth, db } from '../../firebase';
 import {
-  doc, getDoc, updateDoc, collection, query, where, orderBy,
+  doc, updateDoc, collection, query, where, orderBy,
   limit, onSnapshot, runTransaction, increment, serverTimestamp,
   getDocs, startAfter,
 } from 'firebase/firestore';
@@ -134,6 +134,7 @@ function ActiveRideMap({ driverLat, driverLng, pickupLat, pickupLng, destLat, de
     if (!token) return;
 
     // Dynamically import mapbox-gl to avoid SSR issues
+    // eslint-disable-next-line import/no-webpack-loader-syntax
     import('mapbox-gl').then(({ default: mapboxgl }) => {
       mapboxgl.accessToken = token;
 

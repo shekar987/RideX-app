@@ -34,6 +34,7 @@ function LiveMap({ driverLat, driverLng, pickupLat, pickupLng, destLat, destLng,
     const token = process.env.REACT_APP_MAPBOX_TOKEN;
     if (!token || !containerRef.current) return;
 
+    // eslint-disable-next-line import/no-webpack-loader-syntax
     import('mapbox-gl').then(({ default: mapboxgl }) => {
       if (mapRef.current) return;
       mapboxRef.current = mapboxgl;
