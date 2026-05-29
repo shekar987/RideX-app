@@ -159,8 +159,7 @@ function LoginForm() {
       try {
         await user.reload();
       } catch (reloadErr) {
-        console.warn('reload() non-fatal:', reloadErr.message);
-      }
+        }
 
       // Step 4: Check email verified
       if (!auth.currentUser.emailVerified) {
@@ -227,7 +226,6 @@ function LoginForm() {
       setLoading(false);
 
     } catch (err) {
-      console.error('Login error:', err.code, err.message);
       setError(getLoginErrorMessage(err.code));
       setLoading(false);
     }
@@ -392,8 +390,6 @@ function RegisterForm({ onSuccess }) {
     setError('');
     setSuccess('');
 
-    console.log('Step 1: Starting registration...');
-
     // Validate all required fields are filled
     if (
       !formData.name ||
@@ -435,8 +431,6 @@ function RegisterForm({ onSuccess }) {
     setLoading(true);
 
     try {
-      console.log('Step 2: Creating Firebase Auth account...');
-
       // Step 1: Create Firebase Auth account
       const result = await createUserWithEmailAndPassword(
         auth,
@@ -445,12 +439,8 @@ function RegisterForm({ onSuccess }) {
       );
       const user = result.user;
 
-      console.log('Step 3: Auth account created:', user.uid);
-
       // Step 2: Update display name
       await updateProfile(user, { displayName: formData.name });
-
-      console.log('Step 4: Sending verification email...');
 
       // Step 3: Send verification email
       // Wrapped in its own try/catch so a failed email does NOT block registration
@@ -461,10 +451,7 @@ function RegisterForm({ onSuccess }) {
         });
       } catch (emailError) {
         // Don't block registration if email sending fails
-        console.warn('Verification email failed (non-blocking):', emailError.message);
       }
-
-      console.log('Step 5: Saving to Firestore...');
 
       // Step 4: Save driver document via REST API instead of the Firestore SDK.
       // The SDK's setDoc hangs after createUserWithEmailAndPassword because the
@@ -511,13 +498,8 @@ function RegisterForm({ onSuccess }) {
         throw new Error(errData?.error?.message || `Firestore REST error ${restResponse.status}`);
       }
 
-      console.log('Step 6: Firestore save complete');
-      console.log('Step 7: Signing out...');
-
       // Step 5: Sign out immediately — user must verify email before logging in
       await signOut(auth);
-
-      console.log('Step 8: Showing success message');
 
       // Step 6: Show success message inside this component
       setSuccess(
@@ -549,7 +531,6 @@ function RegisterForm({ onSuccess }) {
       }, 3000);
 
     } catch (err) {
-      console.error('Registration error:', err.code, err.message);
 
       // Handle Firebase specific errors with friendly messages
       const errorMessages = {

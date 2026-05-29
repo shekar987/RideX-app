@@ -235,7 +235,7 @@ function ReceiptModal({ ride, onClose }) {
             <span className="w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0" />
             <span className="text-gray-300 truncate">{ride.destinationAddress}</span>
           </div>
-          <p className="text-gray-500 text-xs mt-2">{ride.distance} km · {ride.duration} mins</p>
+          <p className="text-gray-500 text-xs mt-2">{ride.distance} mi · {ride.duration} mins</p>
         </div>
 
         {/* Payment breakdown */}
@@ -348,7 +348,7 @@ function RidesTab({
             </div>
 
             <div className="flex justify-between items-center mb-3 text-sm">
-              <span className="text-gray-400">{popupRide.distance} km · {popupRide.duration} mins</span>
+              <span className="text-gray-400">{popupRide.distance} mi · {popupRide.duration} mins</span>
               <span className="text-yellow-400 font-black text-base">
                 £{(parseFloat(popupRide.price || 0) * 0.8).toFixed(2)} earnings
               </span>
@@ -443,7 +443,7 @@ function RidesTab({
                 </div>
               </div>
             </div>
-            <p className="text-gray-500 text-xs mt-3">{activeRide.distance} km · {activeRide.duration} mins</p>
+            <p className="text-gray-500 text-xs mt-3">{activeRide.distance} mi · {activeRide.duration} mins</p>
           </div>
 
           {/* Fare breakdown */}
@@ -560,7 +560,7 @@ function RidesTab({
 
                   {/* Meta + earnings */}
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-gray-500 text-xs">{ride.distance} km · {ride.duration} mins</p>
+                    <p className="text-gray-500 text-xs">{ride.distance} mi · {ride.duration} mins</p>
                     <div className="text-right">
                       <p className="text-gray-400 text-xs">Your earnings</p>
                       <p className="text-yellow-400 font-black">
@@ -817,7 +817,7 @@ function HistoryTab({ driver }) {
           </div>
 
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">{r.distance} km · {r.duration} mins</span>
+            <span className="text-gray-500">{r.distance} mi · {r.duration} mins</span>
             <div className="text-right">
               <p className="text-gray-400 text-xs">Your earnings</p>
               <p className="text-yellow-400 font-black">£{parseFloat(r.driverEarnings || 0).toFixed(2)}</p>
@@ -950,7 +950,7 @@ function ProfileTab({ driver, setDriver, showToast }) {
         <p className="text-white font-bold">Vehicle Information</p>
         {[
           { label: 'Vehicle Type',          value: driver?.vehicleType },
-          { label: 'Make & Model',          value: driver?.vehicleModel },
+          { label: 'Make & Model',          value: driver?.vehicleMake },
           { label: 'Registration',          value: driver?.vehicleReg },
           { label: 'Year',                  value: driver?.vehicleYear },
           { label: 'Driving Licence No.',   value: driver?.licenceNumber },
@@ -1087,12 +1087,26 @@ export default function DriverDashboard() {
     const q = query(
       collection(db, 'rides'),
       where('status', '==', 'confirmed'),
-      where('driverId', '==', null),
       orderBy('createdAt', 'desc'),
-      limit(10),
+      limit(20),
     );
     const unsub = onSnapshot(q, snap => {
-      const rides = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rides = snap.docs
+        .map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            customerName:       data.customerName       || data.userName    || 'Customer',
+            pickupAddress:      data.pickupAddress      || data.pickup      || 'Pickup location',
+            destinationAddress: data.destinationAddress || data.destination || 'Destination',
+            price:              data.price              || data.fare        || 0,
+            distance:           data.distance           || '—',
+            duration:           data.duration           || '—',
+          };
+        })
+        .filter(r => !r.driverId || r.driverId === '' || r.driverId === null);
+
       if (rides.length > prevRidesRef.current.length) playNotificationSound();
       prevRidesRef.current = rides;
       setAvailableRides(rides);
@@ -1111,7 +1125,17 @@ export default function DriverDashboard() {
     );
     const unsub = onSnapshot(q, snap => {
       if (snap.empty) { setActiveRide(null); return; }
-      setActiveRide({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      const rideData = snap.docs[0].data();
+      setActiveRide({
+        id: snap.docs[0].id,
+        ...rideData,
+        customerName:       rideData.customerName       || rideData.userName    || 'Customer',
+        pickupAddress:      rideData.pickupAddress      || rideData.pickup      || 'Pickup location',
+        destinationAddress: rideData.destinationAddress || rideData.destination || 'Destination',
+        price:              rideData.price              || rideData.fare        || 0,
+        distance:           rideData.distance           || '—',
+        duration:           rideData.duration           || '—',
+      });
     });
     return () => unsub();
   }, [driver]);
@@ -1142,8 +1166,11 @@ export default function DriverDashboard() {
       await runTransaction(db, async transaction => {
         const rideRef  = doc(db, 'rides', rideId);
         const rideSnap = await transaction.get(rideRef);
-        if (!rideSnap.exists())           throw new Error('Ride no longer exists');
-        if (rideSnap.data().driverId !== null) throw new Error('Ride already taken');
+        if (!rideSnap.exists()) throw new Error('Ride no longer exists');
+        const existingDriver = rideSnap.data().driverId;
+        if (existingDriver !== null && existingDriver !== '' && existingDriver !== undefined) {
+          throw new Error('Ride already taken');
+        }
         transaction.update(rideRef, {
           driverId:     driver.uid,
           driverName:   driver.name,
@@ -1306,7 +1333,7 @@ export default function DriverDashboard() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 transition
+            className={`relative flex-1 flex flex-col items-center justify-center py-3 gap-0.5 transition
               ${activeTab === tab.id ? 'text-yellow-400' : 'text-gray-500 hover:text-gray-300'}`}
           >
             <span className="text-xl">{tab.icon}</span>

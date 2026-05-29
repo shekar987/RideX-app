@@ -6,13 +6,12 @@ import { db } from '../firebase';
 
 // ── Status display map ────────────────────────────────────────────────────────
 const STATUS_LABELS = {
-    confirmed:       { label: 'Confirmed',     color: 'text-blue-400',   bg: 'bg-blue-400/10'   },
-    driver_assigned: { label: 'Driver On Way', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
-    driver_arriving: { label: 'Arriving',      color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
-    ride_started:    { label: 'In Progress',   color: 'text-green-400',  bg: 'bg-green-400/10'  },
-    arrived:         { label: 'Completed',     color: 'text-green-400',  bg: 'bg-green-400/10'  },
-    completed:       { label: 'Completed',     color: 'text-green-400',  bg: 'bg-green-400/10'  },
-    cancelled:       { label: 'Cancelled',     color: 'text-red-400',    bg: 'bg-red-400/10'    },
+    confirmed:       { label: 'Confirmed',      color: 'text-blue-400',   bg: 'bg-blue-400/10'   },
+    driver_assigned: { label: 'Driver On Way',  color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+    arrived:         { label: 'Driver Waiting', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+    in_progress:     { label: 'In Progress',    color: 'text-green-400',  bg: 'bg-green-400/10'  },
+    completed:       { label: 'Completed',      color: 'text-green-400',  bg: 'bg-green-400/10'  },
+    cancelled:       { label: 'Cancelled',      color: 'text-red-400',    bg: 'bg-red-400/10'    },
 };
 
 // localStorage key used by this page.
