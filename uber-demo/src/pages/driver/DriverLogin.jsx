@@ -215,13 +215,13 @@ function LoginForm() {
         return;
       }
 
-      if (driverData.status === 'approved') {
-        // Navigate to driver dashboard
+      // Treat 'approved' or missing status (legacy accounts) as approved
+      if (driverData.status === 'approved' || !driverData.status) {
         navigate('/driver/dashboard');
         return;
       }
 
-      // Fallback for unexpected status
+      // Fallback for any other unexpected status value
       setError(`Unexpected account status: "${driverData.status}". Contact support@ridex.com`);
       setLoading(false);
 

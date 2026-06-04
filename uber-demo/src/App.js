@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import DriverRoute from './components/DriverRoute';
+import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // ── Code-split every route ────────────────────────────────────────────────────
@@ -15,6 +16,9 @@ const RideHistory = lazy(() => import('./pages/RideHistory'));
 // Import driver pages
 const DriverLogin     = lazy(() => import('./pages/driver/DriverLogin'));
 const DriverDashboard = lazy(() => import('./pages/driver/DriverDashboard'));
+// Import admin pages
+const AdminLogin     = lazy(() => import('./pages/admin/AdminLogin'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 
 // ── Page-level loading skeleton ───────────────────────────────────────────────
 // Shown while a route chunk is downloading (typically < 200 ms on broadband,
@@ -55,6 +59,8 @@ export function AppRoutes() {
                 <Route path="/history"      element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
                 <Route path="/driver/login"      element={<DriverLogin />} />
                 <Route path="/driver/dashboard" element={<DriverRoute><DriverDashboard /></DriverRoute>} />
+                <Route path="/admin/login"      element={<AdminLogin />} />
+                <Route path="/admin/dashboard"  element={<AdminRoute><AdminDashboard /></AdminRoute>} />
                 <Route path="*"                 element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
