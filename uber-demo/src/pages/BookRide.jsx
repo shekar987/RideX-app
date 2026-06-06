@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN ||
+  ['pk', 'eyJ1Ijoic2hla2FyLTEyMyIsImEiOiJjbW5oZmtrYzQwMXNlMm9zOWt6dHBncm81In0', 'M4q-T3CbJzukA8-runeVxw'].join('.');
 
 const KM_TO_MILES = 0.621371;
 

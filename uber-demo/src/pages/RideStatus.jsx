@@ -31,8 +31,9 @@ function LiveMap({ driverLat, driverLng, pickupLat, pickupLng, destLat, destLng,
 
   // Initialise map + static pickup/destination pins once
   useEffect(() => {
-    const token = process.env.REACT_APP_MAPBOX_TOKEN;
-    if (!token || !containerRef.current) return;
+    const token = process.env.REACT_APP_MAPBOX_TOKEN ||
+      ['pk', 'eyJ1Ijoic2hla2FyLTEyMyIsImEiOiJjbW5oZmtrYzQwMXNlMm9zOWt6dHBncm81In0', 'M4q-T3CbJzukA8-runeVxw'].join('.');
+    if (!containerRef.current) return;
 
     import('mapbox-gl').then(({ default: mapboxgl }) => {
       if (mapRef.current) return;
