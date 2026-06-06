@@ -1073,7 +1073,9 @@ export default function DriverDashboard() {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isOnline, driver]);
+  // driver?.uid: stable string — prevents restarting the GPS watch every time
+  // earnings/totalRides update and create a new driver object reference.
+  }, [isOnline, driver?.uid]);
 
   // ── Available rides listener ──
   const prevRidesRef = useRef([]);
@@ -1090,6 +1092,9 @@ export default function DriverDashboard() {
       orderBy('createdAt', 'desc'),
       limit(20),
     );
+    // initialized: true after the first snapshot — prevents chime on page load
+    // when pre-existing rides are present. Only fires for genuinely new arrivals.
+    let initialized = false;
     const unsub = onSnapshot(q, snap => {
       const rides = snap.docs
         .map(d => {
@@ -1107,7 +1112,8 @@ export default function DriverDashboard() {
         })
         .filter(r => !r.driverId || r.driverId === '' || r.driverId === null);
 
-      if (rides.length > prevRidesRef.current.length) playNotificationSound();
+      if (initialized && rides.length > prevRidesRef.current.length) playNotificationSound();
+      initialized = true;
       prevRidesRef.current = rides;
       setAvailableRides(rides);
       setAvailableLoading(false);
@@ -1205,23 +1211,29 @@ export default function DriverDashboard() {
   };
 
   // ── Complete ride ──
+  // Single transaction: if either write fails, both are rolled back — no
+  // scenario where ride is marked completed but driver earnings aren't updated.
   const completeRide = async ride => {
     try {
       const driverEarnings = parseFloat(ride.price || 0) * 0.8;
       const platformFee    = parseFloat(ride.price || 0) * 0.2;
 
-      await updateDoc(doc(db, 'rides', ride.id), {
-        status:         'completed',
-        completedAt:    serverTimestamp(),
-        driverEarnings: driverEarnings,
-        platformFee:    platformFee,
-      });
+      const rideRef   = doc(db, 'rides',   ride.id);
+      const driverRef = doc(db, 'drivers', driver.uid);
 
-      await updateDoc(doc(db, 'drivers', driver.uid), {
-        earnings:      increment(driverEarnings),
-        todayEarnings: increment(driverEarnings),
-        weekEarnings:  increment(driverEarnings),
-        totalRides:    increment(1),
+      await runTransaction(db, async transaction => {
+        transaction.update(rideRef, {
+          status:         'completed',
+          completedAt:    serverTimestamp(),
+          driverEarnings: driverEarnings,
+          platformFee:    platformFee,
+        });
+        transaction.update(driverRef, {
+          earnings:      increment(driverEarnings),
+          todayEarnings: increment(driverEarnings),
+          weekEarnings:  increment(driverEarnings),
+          totalRides:    increment(1),
+        });
       });
 
       // Refresh local driver state

@@ -175,12 +175,15 @@ function RideStatus() {
     return () => unsub();
   }, [liveRide?.driverId]);
 
-  // Demo simulation so UI flows without a real driver in testing
+  // Demo-only simulation: auto-advances steps when there is no real Firestore
+  // rideId (e.g. Firestore save timed out, or testing without a live driver).
+  // When a real rideId exists the driver's status updates drive the UI instead.
   useEffect(() => {
+    if (rideId) return;
     if (status >= STEPS.length - 1) return;
     const timer = setTimeout(() => setStatus(s => s + 1), 4000);
     return () => clearTimeout(timer);
-  }, [status]);
+  }, [rideId, status]);
 
   if (!rideDetails) return <Navigate to="/book" replace />;
 

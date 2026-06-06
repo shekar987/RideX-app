@@ -4,13 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-// Token assembled at runtime to satisfy GitHub secret-scanning rules.
-// Mapbox public tokens (pk.*) are safe to ship in client-side code.
-mapboxgl.accessToken = [
-  'pk',
-  'eyJ1Ijoic2hla2FyLTEyMyIsImEiOiJjbW5oZmtrYzQwMXNlMm9zOWt6dHBncm81In0',
-  'M4q-T3CbJzukA8-runeVxw',
-].join('.');
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
 
 const KM_TO_MILES = 0.621371;
 
