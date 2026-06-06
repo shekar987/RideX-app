@@ -91,7 +91,7 @@ function SkeletonCard() {
 // ─────────────────────────────────────────────
 function ToastContainer({ toasts }) {
   return (
-    <div className="fixed bottom-24 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed bottom-[5.5rem] right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-[calc(100vw-2rem)]">
       {toasts.map(t => (
         <div
           key={t.id}
@@ -111,7 +111,7 @@ function ToastContainer({ toasts }) {
 // ─────────────────────────────────────────────
 // KPI stat card — primary accent (earnings) vs neutral
 // ─────────────────────────────────────────────
-function StatCard({ label, value, sub, accent = false }) {
+function StatCard({ label, value, children, sub, accent = false, large = false }) {
   return (
     <div className={`rounded-2xl p-4 flex-1 min-w-0 flex flex-col gap-1 shadow-sm
       ${accent
@@ -119,7 +119,11 @@ function StatCard({ label, value, sub, accent = false }) {
         : 'bg-gray-900 border border-gray-800'
       }`}>
       <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-500 leading-none">{label}</p>
-      <p className={`font-black text-xl leading-tight ${accent ? 'text-yellow-400' : 'text-white'}`}>{value}</p>
+      {children ?? (
+        <p className={`font-black leading-tight ${large ? 'text-3xl' : 'text-xl'} ${accent ? 'text-yellow-400' : 'text-white'}`}>
+          {value}
+        </p>
+      )}
       {sub && <p className="text-xs text-gray-400 leading-none">{sub}</p>}
     </div>
   );
@@ -421,11 +425,14 @@ function RidesTab({
           value={`${parseFloat(driver?.rating || 5).toFixed(1)}`}
           sub="out of 5.0"
         />
-        <StatCard
-          label="Status"
-          value={isOnline ? 'Online' : 'Offline'}
-          sub={isOnline ? 'Receiving requests' : 'Not visible'}
-        />
+        <StatCard label="Status">
+          <div className="mt-0.5">
+            <StatusBadge online={isOnline} />
+          </div>
+          <p className="text-xs text-gray-500 leading-none mt-0.5">
+            {isOnline ? 'Receiving requests' : 'Not visible'}
+          </p>
+        </StatCard>
       </div>
 
       {/* ── Trust strip — shown only when online ── */}
@@ -519,7 +526,7 @@ function RidesTab({
           </p>
           <button
             onClick={toggleOnline}
-            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition"
+            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
           >
             Go Online
           </button>
@@ -666,6 +673,11 @@ function RidesTab({
       {/* ── Available rides (online, no active ride) ── */}
       {isOnline && !activeRide && (
         <div>
+          {/* Live indicator — confirms GPS is active and driver is visible */}
+          <div className="flex items-center gap-2.5 bg-green-500/10 border border-green-500/20 rounded-2xl px-4 py-3 mb-5">
+            <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
+            <p className="text-green-400 text-sm font-semibold">You're live — customers can see you nearby</p>
+          </div>
           <SectionHeader title="Available Rides" subtitle="New requests appear automatically" />
 
           {availableLoading ? (
@@ -750,7 +762,7 @@ function RidesTab({
                   <button
                     onClick={() => handleAcceptRide(ride.id)}
                     disabled={!!acceptingId}
-                    className="w-full py-3 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm shadow-yellow-400/20"
+                    className="w-full py-3 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm shadow-yellow-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                   >
                     {acceptingId === ride.id ? (
                       <>
@@ -840,22 +852,10 @@ function EarningsTab({ driver }) {
 
       {/* Summary KPI cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-yellow-400/5 border border-yellow-400/25 rounded-2xl p-4">
-          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1">Today</p>
-          <p className="text-yellow-400 font-black text-3xl leading-none">£{parseFloat(driver?.todayEarnings || 0).toFixed(2)}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1">This Week</p>
-          <p className="text-white font-black text-3xl leading-none">£{parseFloat(driver?.weekEarnings || 0).toFixed(2)}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1">All Time</p>
-          <p className="text-white font-black text-3xl leading-none">£{parseFloat(driver?.earnings || 0).toFixed(2)}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1">Total Rides</p>
-          <p className="text-white font-black text-3xl leading-none">{driver?.totalRides || 0}</p>
-        </div>
+        <StatCard label="Today"       value={`£${parseFloat(driver?.todayEarnings || 0).toFixed(2)}`} accent large />
+        <StatCard label="This Week"   value={`£${parseFloat(driver?.weekEarnings  || 0).toFixed(2)}`} large />
+        <StatCard label="All Time"    value={`£${parseFloat(driver?.earnings      || 0).toFixed(2)}`} large />
+        <StatCard label="Total Rides" value={driver?.totalRides || 0} large />
       </div>
 
       {/* Weekly bar chart */}
@@ -1194,29 +1194,11 @@ export default function DriverDashboard() {
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
-  // ── Online time (local, resets on page reload) ──
-  const onlineStartRef   = useRef(null);
-  const [onlineMinutes, setOnlineMinutes] = useState(0);
-
   const showToast = useCallback((message, type = 'success') => {
     const id = ++toastIdRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   }, []);
-
-  // ── Online time ticker — starts when driver goes online, resets when offline ──
-  useEffect(() => {
-    if (!isOnline) {
-      onlineStartRef.current = null;
-      setOnlineMinutes(0);
-      return;
-    }
-    if (!onlineStartRef.current) onlineStartRef.current = Date.now();
-    const tick = () => setOnlineMinutes(Math.floor((Date.now() - onlineStartRef.current) / 60000));
-    tick();
-    const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
-  }, [isOnline]);
 
   // ── Auth + driver data ──
   useEffect(() => {
@@ -1261,11 +1243,13 @@ export default function DriverDashboard() {
   }, [navigate]);
 
   // ── GPS location tracking when online ──
+  // Declared here so both the GPS and active-ride useEffects can share it.
+  const driverUid = driver?.uid;
   useEffect(() => {
-    if (!isOnline || !driver) return;
+    if (!isOnline || !driverUid) return;
     const watchId = navigator.geolocation.watchPosition(
       pos => {
-        updateDoc(doc(db, 'drivers', driver.uid), {
+        updateDoc(doc(db, 'drivers', driverUid), {
           currentLat: pos.coords.latitude,
           currentLng: pos.coords.longitude,
           lastSeen:   serverTimestamp(),
@@ -1275,9 +1259,7 @@ export default function DriverDashboard() {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  // driver?.uid: stable string — prevents restarting the GPS watch every time
-  // earnings/totalRides update and create a new driver object reference.
-  }, [isOnline, driver?.uid]);
+  }, [isOnline, driverUid]);
 
   // ── Available rides listener ──
   const prevRidesRef = useRef([]);
@@ -1323,10 +1305,10 @@ export default function DriverDashboard() {
 
   // ── Active ride listener ──
   useEffect(() => {
-    if (!driver) return;
+    if (!driverUid) return;
     const q = query(
       collection(db, 'rides'),
-      where('driverId', '==', driver.uid),
+      where('driverId', '==', driverUid),
       where('status', 'in', ['driver_assigned', 'arrived', 'in_progress']),
     );
     const unsub = onSnapshot(q, snap => {
@@ -1344,7 +1326,7 @@ export default function DriverDashboard() {
       });
     });
     return () => unsub();
-  }, [driver]);
+  }, [driverUid]);
 
   // ── Toggle online status ──
   const toggleOnline = async () => {
@@ -1486,11 +1468,14 @@ export default function DriverDashboard() {
     <div className="min-h-screen bg-black">
 
       {/* ── Fixed top navbar ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/95 border-b border-gray-800 h-16 flex items-center px-4 gap-3">
+      <nav
+        aria-label="Driver dashboard navigation"
+        className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-xl border-b border-gray-800/60 h-16 flex items-center px-4 gap-3"
+      >
         {/* Logo */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center shadow-md shadow-yellow-400/20">
-            <span className="text-black font-black text-sm">R</span>
+            <span className="text-black font-black text-sm" aria-hidden="true">R</span>
           </div>
           <span className="text-white font-black text-lg tracking-tight">RideX</span>
         </div>
@@ -1505,17 +1490,21 @@ export default function DriverDashboard() {
         <button
           onClick={toggleOnline}
           disabled={togglingOnline}
-          className="flex-shrink-0 disabled:opacity-60 transition"
+          aria-pressed={isOnline}
+          aria-label={isOnline ? 'Go offline' : 'Go online'}
+          className="flex-shrink-0 disabled:opacity-60 transition-opacity rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
           <StatusBadge online={isOnline} />
         </button>
       </nav>
 
       {/* ── Scrollable content area ── */}
-      <main className="pt-16 pb-20 px-4 min-h-screen">
+      <main className="pt-16 pb-24 px-4 min-h-screen">
         <div className="max-w-lg mx-auto py-5">
 
-          {activeTab === 'rides' && (
+          {/* Each section is always mounted but hidden when inactive — preserves
+              scroll position and prevents re-fetching Firestore listeners on tab switch */}
+          <section id="rides-panel" role="tabpanel" aria-labelledby="rides-tab" hidden={activeTab !== 'rides'}>
             <RidesTab
               driver={driver}
               isOnline={isOnline}
@@ -1532,44 +1521,54 @@ export default function DriverDashboard() {
               otpError={otpError}
               setOtpError={setOtpError}
               verifyOtp={verifyOtp}
-              onlineMinutes={onlineMinutes}
             />
-          )}
+          </section>
 
-          {activeTab === 'earnings' && <EarningsTab driver={driver} />}
+          <section id="earnings-panel" role="tabpanel" aria-labelledby="earnings-tab" hidden={activeTab !== 'earnings'}>
+            <EarningsTab driver={driver} />
+          </section>
 
-          {activeTab === 'history' && <HistoryTab driver={driver} />}
+          <section id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden={activeTab !== 'history'}>
+            <HistoryTab driver={driver} />
+          </section>
 
-          {activeTab === 'profile' && (
+          <section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab" hidden={activeTab !== 'profile'}>
             <ProfileTab driver={driver} setDriver={setDriver} showToast={showToast} />
-          )}
+          </section>
         </div>
       </main>
 
       {/* ── Fixed bottom tab bar ── */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-gray-950 border-t border-gray-800 flex z-50 pb-safe">
-        {tabs.map(tab => {
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`relative flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-colors
-                ${active ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
-            >
-              {/* Pill background for active tab */}
-              {active && (
-                <span className="absolute inset-x-3 inset-y-1.5 rounded-xl bg-yellow-400/10 pointer-events-none" />
-              )}
-              <span className="relative z-10">
-                <TabIcon id={tab.id} active={active} />
-              </span>
-              <span className={`relative z-10 text-[10px] font-bold leading-none ${active ? 'text-yellow-400' : 'text-gray-600'}`}>
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
+      <nav aria-label="Tab navigation" className="fixed bottom-0 left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-gray-800/60 z-50 pb-safe">
+        <div role="tablist" aria-label="Dashboard sections" className="flex">
+          {tabs.map(tab => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`${tab.id}-tab`}
+                role="tab"
+                aria-selected={active}
+                aria-controls={`${tab.id}-panel`}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-colors
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-yellow-400
+                  ${active ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
+              >
+                {/* Active pill background */}
+                {active && (
+                  <span className="absolute inset-x-3 inset-y-1.5 rounded-xl bg-yellow-400/10 pointer-events-none" aria-hidden="true" />
+                )}
+                <span className="relative z-10" aria-hidden="true">
+                  <TabIcon id={tab.id} active={active} />
+                </span>
+                <span className={`relative z-10 text-[10px] font-bold leading-none ${active ? 'text-yellow-400' : 'text-gray-600'}`}>
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* ── Toast container ── */}
