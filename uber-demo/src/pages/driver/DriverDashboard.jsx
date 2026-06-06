@@ -274,6 +274,7 @@ function RidesTab({
   activeRide,
   handleAcceptRide, updateRideStatus, completeRide,
   acceptingId,
+  otpInput, setOtpInput, otpError, setOtpError, verifyOtp,
 }) {
   // Countdown state for ride request popup
   const [countdown, setCountdown]       = useState(15);
@@ -488,12 +489,31 @@ function RidesTab({
               </button>
             )}
             {activeRide.status === 'arrived' && (
-              <button
-                onClick={() => updateRideStatus(activeRide.id, 'in_progress')}
-                className="w-full py-4 bg-green-500 text-white font-black rounded-2xl hover:bg-green-400 transition text-lg"
-              >
-                Start Ride
-              </button>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+                <p className="text-white font-bold text-center">Enter Customer's Ride Code</p>
+                <p className="text-gray-500 text-xs text-center">Ask the customer to show their 4-digit code</p>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={otpInput}
+                    onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '')); setOtpError(''); }}
+                    placeholder="- - - -"
+                    className="flex-1 bg-black border border-gray-800 rounded-xl px-4 py-3 text-center text-2xl font-black tracking-widest focus:border-yellow-400 outline-none text-yellow-400 placeholder-gray-700"
+                  />
+                  <button
+                    onClick={() => verifyOtp(activeRide)}
+                    disabled={otpInput.length !== 4}
+                    className="px-6 py-3 bg-green-500 text-white font-black rounded-xl hover:bg-green-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Start
+                  </button>
+                </div>
+                {otpError && (
+                  <p className="text-red-400 text-sm text-center">{otpError}</p>
+                )}
+              </div>
             )}
             {activeRide.status === 'in_progress' && (
               <button
@@ -998,6 +1018,10 @@ export default function DriverDashboard() {
   const [activeRide,      setActiveRide]      = useState(null);
   const [acceptingId,     setAcceptingId]     = useState(null);
 
+  // ── OTP verification ──
+  const [otpInput, setOtpInput] = useState('');
+  const [otpError, setOtpError] = useState('');
+
   // ── Receipt modal ──
   const [showReceipt,  setShowReceipt]  = useState(false);
   const [completedRide, setCompletedRide] = useState(null);
@@ -1210,6 +1234,17 @@ export default function DriverDashboard() {
     }
   };
 
+  // ── OTP verification before starting ride ──
+  const verifyOtp = async (ride) => {
+    if (otpInput !== ride.otp) {
+      setOtpError('Wrong code. Ask the customer to check their app.');
+      return;
+    }
+    setOtpError('');
+    setOtpInput('');
+    await updateRideStatus(ride.id, 'in_progress');
+  };
+
   // ── Complete ride ──
   // Single transaction: if either write fails, both are rolled back — no
   // scenario where ride is marked completed but driver earnings aren't updated.
@@ -1326,6 +1361,11 @@ export default function DriverDashboard() {
               updateRideStatus={updateRideStatus}
               completeRide={completeRide}
               acceptingId={acceptingId}
+              otpInput={otpInput}
+              setOtpInput={setOtpInput}
+              otpError={otpError}
+              setOtpError={setOtpError}
+              verifyOtp={verifyOtp}
             />
           )}
 

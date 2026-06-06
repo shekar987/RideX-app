@@ -123,6 +123,7 @@ export function AuthProvider({ children }) {
     // saveRide closes over `user` — re-created only when user changes
     const saveRide = useCallback(async (details) => {
         if (!user) return;
+        const otp = String(Math.floor(1000 + Math.random() * 9000));
         const docRef = await addDoc(collection(db, 'rides'), {
             userId:         user.uid,
             userName:       user.displayName || user.email,
@@ -140,6 +141,7 @@ export function AuthProvider({ children }) {
             status:         'confirmed',
             driverId:       null,
             driverName:     null,
+            otp,
             createdAt:      serverTimestamp(),
         });
         return docRef.id;

@@ -292,6 +292,21 @@ function RideStatus() {
             </div>
           )}
 
+          {/* OTP — shown to customer once driver is assigned, until ride completes */}
+          {liveRide?.otp && status >= 1 && status < STEPS.length - 1 && (
+            <div className="bg-gray-900 rounded-2xl p-6">
+              <p className="text-gray-400 text-sm mb-1">Your ride code</p>
+              <p className="text-xs text-gray-500 mb-4">Share this with your driver when they arrive</p>
+              <div className="flex justify-center gap-3">
+                {liveRide.otp.split('').map((digit, i) => (
+                  <div key={i} className="w-14 h-14 bg-black border-2 border-yellow-400 rounded-xl flex items-center justify-center text-2xl font-black text-yellow-400">
+                    {digit}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Progress steps */}
           <div className="bg-gray-900 rounded-2xl p-6">
             <p className="text-gray-400 text-sm mb-4">Ride Progress</p>
