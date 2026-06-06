@@ -29,7 +29,7 @@ function LandingPage() {
                     </button>
                     <button
                         onClick={() => navigate('/register')}
-                        className="px-5 py-2 text-sm bg-yellow-400 text-black rounded-full font-bold hover:bg-yellow-300 transition"
+                        className="px-5 py-2 text-sm bg-yellow-400 text-black rounded-full font-bold hover:bg-yellow-300 active:bg-yellow-500 transition"
                     >
                         Sign up free
                     </button>
@@ -57,7 +57,7 @@ function LandingPage() {
                     <div className="flex gap-4 mb-6">
                         <button
                             onClick={() => navigate('/register')}
-                            className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20"
+                            className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 active:bg-yellow-500 transition shadow-lg shadow-yellow-400/20"
                         >
                             Book a ride →
                         </button>
@@ -198,7 +198,7 @@ function LandingPage() {
                         <div className="flex flex-wrap gap-3">
                             <button
                                 onClick={() => navigate('/driver/login?tab=register')}
-                                className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20"
+                                className="px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 active:bg-yellow-500 transition shadow-lg shadow-yellow-400/20"
                             >
                                 Become a Driver →
                             </button>

@@ -360,7 +360,14 @@ function RidesTab({
   handleAcceptRide, updateRideStatus, completeRide,
   acceptingId,
   otpInput, setOtpInput, otpError, setOtpError, verifyOtp,
+  onlineMinutes,
 }) {
+  function fmtOnlineTime(mins) {
+    if (mins < 1) return 'Just started';
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
   const [countdown, setCountdown]       = useState(15);
   const [popupRide, setPopupRide]       = useState(null);
   const countdownRef                    = useRef(null);
@@ -420,6 +427,20 @@ function RidesTab({
           sub={isOnline ? 'Receiving requests' : 'Not visible'}
         />
       </div>
+
+      {/* ── Trust strip — shown only when online ── */}
+      {isOnline && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
+            <span className="text-green-400 text-xs font-semibold">Online {fmtOnlineTime(onlineMinutes)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-600 text-xs">Next payout</span>
+            <span className="text-yellow-400 text-xs font-black">£{parseFloat(driver?.weekEarnings || 0).toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Ride request popup ── */}
       {popupRide && isOnline && (
@@ -652,16 +673,32 @@ function RidesTab({
               <SkeletonCard /><SkeletonCard /><SkeletonCard />
             </div>
           ) : availableRides.length === 0 ? (
-            <EmptyState
-              icon={
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H7a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v2m-4 12h4a2 2 0 002-2v-6a2 2 0 00-2-2h-4m-4 0V8m0 8v-4m0 0H9m4 0h-4" />
-                </svg>
-              }
-              title="Quiet right now"
-              body="No ride requests in your area. New requests will appear here automatically."
-              hint="Peak hours: 7–9 am  ·  12–2 pm  ·  5–8 pm"
-            />
+            <div className="space-y-3">
+              <EmptyState
+                icon={
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H7a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v2m-4 12h4a2 2 0 002-2v-6a2 2 0 00-2-2h-4m-4 0V8m0 8v-4m0 0H9m4 0h-4" />
+                  </svg>
+                }
+                title="Quiet right now"
+                body="No ride requests in your area. New requests will appear here automatically."
+                hint="Peak demand: 7–9 am  ·  12–2 pm  ·  5–8 pm  ·  Fri & Sat nights"
+              />
+              {/* Driver tips panel */}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+                <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Tips to get more rides</p>
+                {[
+                  'Move to busy areas — city centre, airports, or train stations',
+                  'Keep your rating high: be punctual and keep the car clean',
+                  'Accept requests quickly — faster responses improve your rank',
+                ].map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0 mt-1.5" />
+                    <p className="text-gray-400 text-sm leading-snug">{tip}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
             <div className="space-y-3">
               {availableRides.map(ride => (
@@ -1157,11 +1194,29 @@ export default function DriverDashboard() {
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
+  // ── Online time (local, resets on page reload) ──
+  const onlineStartRef   = useRef(null);
+  const [onlineMinutes, setOnlineMinutes] = useState(0);
+
   const showToast = useCallback((message, type = 'success') => {
     const id = ++toastIdRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   }, []);
+
+  // ── Online time ticker — starts when driver goes online, resets when offline ──
+  useEffect(() => {
+    if (!isOnline) {
+      onlineStartRef.current = null;
+      setOnlineMinutes(0);
+      return;
+    }
+    if (!onlineStartRef.current) onlineStartRef.current = Date.now();
+    const tick = () => setOnlineMinutes(Math.floor((Date.now() - onlineStartRef.current) / 60000));
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [isOnline]);
 
   // ── Auth + driver data ──
   useEffect(() => {
@@ -1477,6 +1532,7 @@ export default function DriverDashboard() {
               otpError={otpError}
               setOtpError={setOtpError}
               verifyOtp={verifyOtp}
+              onlineMinutes={onlineMinutes}
             />
           )}
 

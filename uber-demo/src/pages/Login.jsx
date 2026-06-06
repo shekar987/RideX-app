@@ -213,7 +213,7 @@ function Login() {
                 <button
                     onClick={handleLogin}
                     disabled={loading || isLocked}
-                    className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                     {loading ? 'Logging in…' : isLocked ? 'Account locked' : 'Log In'}
                 </button>

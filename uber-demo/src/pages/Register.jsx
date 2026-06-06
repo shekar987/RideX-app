@@ -103,7 +103,7 @@ function Register() {
                         </p>
                         <button
                             onClick={() => navigate('/login')}
-                            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition"
+                            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition"
                         >
                             Go to Login
                         </button>
@@ -165,7 +165,7 @@ function Register() {
                         <button
                             onClick={handleRegister}
                             disabled={loading}
-                            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {loading ? 'Creating account…' : 'Create Account'}
                         </button>

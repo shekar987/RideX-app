@@ -316,7 +316,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {loading && (
           <svg className="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -744,7 +744,7 @@ function RegisterForm({ onSuccess }) {
       <button
         onClick={handleRegister}
         disabled={loading}
-        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
           <span className="flex items-center justify-center gap-2">
@@ -838,15 +838,15 @@ export default function DriverLogin() {
         {/* Customer tab - navigates away to the customer login page */}
         <button
           onClick={() => navigate('/login')}
-          className="flex-1 py-3 text-sm font-semibold text-gray-500 hover:text-gray-300 transition"
+          className="flex-1 py-3 text-sm font-semibold text-gray-500 hover:text-gray-300 active:text-white transition"
         >
-          👤 Customer
+          Customer
         </button>
         {/* Driver tab - active on this page */}
         <button
-          className="flex-1 py-3 text-sm font-semibold text-white border-b-2 border-yellow-400"
+          className="flex-1 py-3 text-sm font-semibold text-yellow-400 border-b-2 border-yellow-400"
         >
-          🚗 Driver
+          Driver
         </button>
       </div>
 
@@ -865,12 +865,12 @@ export default function DriverLogin() {
           </p>
 
           {/* Toggle between Login and Register forms */}
-          <div className="bg-gray-900 border border-gray-800 rounded-full p-1 flex mb-6">
+          <div className="bg-black border border-gray-800 rounded-full p-1 flex mb-6">
             <button
               onClick={() => setActiveForm('login')}
               className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${
                 activeForm === 'login'
-                  ? 'bg-white text-black font-black'
+                  ? 'bg-yellow-400 text-black font-black'
                   : 'text-gray-500 hover:text-gray-300'
               }`}
             >
@@ -880,7 +880,7 @@ export default function DriverLogin() {
               onClick={() => setActiveForm('register')}
               className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${
                 activeForm === 'register'
-                  ? 'bg-white text-black font-black'
+                  ? 'bg-yellow-400 text-black font-black'
                   : 'text-gray-500 hover:text-gray-300'
               }`}
             >
