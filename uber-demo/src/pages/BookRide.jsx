@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
+// Token is applied per-map-instance inside MapDisplay to avoid crashing if env var is absent.
 
 const KM_TO_MILES = 0.621371;
 
@@ -73,9 +73,11 @@ function MapDisplay({ pickup, destination }) {
     const containerRef = useRef(null);
     const map          = useRef(null);
     const markersRef   = useRef([]);
+    const token        = process.env.REACT_APP_MAPBOX_TOKEN;
 
     useEffect(() => {
-        if (map.current) return;
+        if (map.current || !containerRef.current || !token) return;
+        mapboxgl.accessToken = token;
         map.current = new mapboxgl.Map({
             container: containerRef.current,
             style:     'mapbox://styles/mapbox/dark-v11',
@@ -84,7 +86,7 @@ function MapDisplay({ pickup, destination }) {
             maxBounds: [[-0.5104, 51.2868], [0.3340, 51.6919]],
         });
         map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    }, []);
+    }, [token]);
 
     useEffect(() => {
         if (!map.current) return;
@@ -144,6 +146,18 @@ function MapDisplay({ pickup, destination }) {
             if (pickup) map.current.flyTo({ center: [pickup.lng, pickup.lat], zoom: 13 });
         }
     }, [pickup, destination]);
+
+    if (!token) {
+        return (
+            <div className="w-full h-full bg-gray-900 border border-gray-800 rounded-3xl flex flex-col items-center justify-center gap-3 p-8 text-center">
+                <svg className="w-10 h-10 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+                </svg>
+                <p className="text-gray-500 text-sm font-semibold">Map unavailable</p>
+                <p className="text-gray-600 text-xs">Add <code className="bg-gray-800 px-1 rounded">REACT_APP_MAPBOX_TOKEN</code> to Vercel environment variables, then redeploy.</p>
+            </div>
+        );
+    }
 
     return <div ref={containerRef} style={{ height: '100%', width: '100%', borderRadius: '24px' }} />;
 }
