@@ -16,64 +16,106 @@ import { auth } from '../../firebase';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Country options for the registration dropdown
-const COUNTRIES = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
-
-// Vehicle type options for the registration dropdown
+const COUNTRIES     = ['UK', 'USA', 'Canada', 'Australia', 'India', 'UAE', 'Other'];
 const VEHICLE_TYPES = ['Sedan', 'SUV', 'Van', 'Luxury', 'Motorbike'];
+const VEHICLE_YEARS = Array.from({ length: 12 }, (_, i) => 2015 + i); // 2015–2026
 
-// Vehicle year options: 2015 to 2024
-const VEHICLE_YEARS = Array.from({ length: 10 }, (_, i) => 2015 + i);
+const ring       = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
+const ringOffset = 'focus-visible:ring-offset-2 focus-visible:ring-offset-black';
 
-// Convert Firebase Auth error codes to user-friendly messages for login
+// Convert Firebase Auth error codes to user-friendly messages
 function getLoginErrorMessage(code) {
   const map = {
-    'auth/wrong-password': 'Incorrect password. Please try again.',
-    'auth/user-not-found': 'No account found with this email.',
-    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/wrong-password':    'Incorrect password. Please try again.',
+    'auth/user-not-found':    'No account found with this email.',
+    'auth/invalid-email':     'Please enter a valid email address.',
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
-    'auth/invalid-credential': 'Invalid email or password. Please try again.',
-    'unavailable': 'Connection issue. Please check your internet and try again.',
+    'auth/invalid-credential':'Invalid email or password. Please try again.',
+    'unavailable':            'Connection issue. Please check your internet and try again.',
   };
   return map[code] || 'Something went wrong. Please try again.';
 }
 
-// Determine password strength based on length
-// Returns { label, color, width } for the strength bar
+// Returns { label, color, width } for the password strength bar
 function getPasswordStrength(password) {
   if (password.length === 0) return null;
-  if (password.length < 6) return { label: 'Weak', color: 'bg-red-500', width: 'w-1/3' };
-  if (password.length < 10) return { label: 'Medium', color: 'bg-yellow-400', width: 'w-2/3' };
-  return { label: 'Strong', color: 'bg-green-500', width: 'w-full' };
+  if (password.length < 6)   return { label: 'Weak',   color: 'bg-red-500',    width: 'w-1/3' };
+  if (password.length < 10)  return { label: 'Medium', color: 'bg-yellow-400', width: 'w-2/3' };
+  return                             { label: 'Strong', color: 'bg-green-500',  width: 'w-full' };
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Shared atoms ──────────────────────────────────────────────────────────────
 
-// Eye toggle button used inside password inputs to show/hide text
-function EyeToggle({ show, onToggle }) {
+function Spinner() {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition"
-      aria-label={show ? 'Hide password' : 'Show password'}
-    >
-      {show ? (
-        // Eye-off icon (password visible)
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-        </svg>
-      ) : (
-        // Eye icon (password hidden)
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-      )}
-    </button>
+    <svg className="animate-spin h-4 w-4 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+}
+
+function EyeIcon({ open }) {
+  return open ? (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  ) : (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+    </svg>
+  );
+}
+
+// Text input with visible label properly associated via htmlFor/id
+function FormField({ id, label, type, value, onChange, placeholder, autoComplete, autoCapitalize, maxLength, rightElement }) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs text-gray-400 font-medium mb-2">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          autoCapitalize={autoCapitalize}
+          maxLength={maxLength}
+          className={`w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white
+            placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm ${ring}
+            ${rightElement ? 'pr-11' : ''}`}
+        />
+        {rightElement && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {rightElement}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Select/dropdown with visible label
+function SelectField({ id, label, value, onChange, children }) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs text-gray-400 font-medium mb-2">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={onChange}
+        className={`w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white
+          focus:outline-none focus:border-yellow-400 transition text-sm ${ring}`}
+      >
+        {children}
+      </select>
+    </div>
   );
 }
 
@@ -84,27 +126,21 @@ function EyeToggle({ show, onToggle }) {
 function LoginForm() {
   const navigate = useNavigate();
 
-  // Form field state
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw]     = useState(false);
 
-  // UI feedback state
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState('');
-  const [success, setSuccess]         = useState('');
-  const [warning, setWarning]         = useState('');
-  const [showResend, setShowResend]   = useState(false);
-  const [resendMsg, setResendMsg]     = useState('');
+  const [loading, setLoading]               = useState(false);
+  const [error, setError]                   = useState('');
+  const [success, setSuccess]               = useState('');
+  const [warning, setWarning]               = useState('');
+  const [showResend, setShowResend]         = useState(false);
+  const [resendMsg, setResendMsg]           = useState('');
   const [unverifiedUser, setUnverifiedUser] = useState(null);
 
-  // Handle forgot-password flow
-  // Sends a reset email if the email field is filled, otherwise shows an error
+  // Sends a password reset email; requires the email field to be filled first
   async function handleForgotPassword() {
-    if (!email.trim()) {
-      setError('Please enter your email first');
-      return;
-    }
+    if (!email.trim()) { setError('Please enter your email first.'); return; }
     try {
       await sendPasswordResetEmail(auth, email.trim());
       setError('');
@@ -125,43 +161,30 @@ function LoginForm() {
     }
   }
 
-  // Main login submit handler
   // Steps: validate → sign in → reload → check verification → check Firestore status → navigate
   async function handleSubmit(e) {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-    setWarning('');
-    setShowResend(false);
-    setResendMsg('');
+    setError(''); setSuccess(''); setWarning('');
+    setShowResend(false); setResendMsg('');
 
-    // Step 1: Validate inputs
     if (!email.trim() || !password.trim()) {
       setError('Please enter your email and password.');
       return;
     }
 
-    // Step 2: Show loading spinner
     setLoading(true);
-
     try {
-      // Step 1: Sign in
-      const result = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const user = result.user;
+      const result    = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user      = result.user;
 
-      // Step 2: Grab the ID token NOW — immediately after sign-in, before any
-      // auth-state listeners fire and before the Firestore SDK tries to
-      // reconnect (which throws "unavailable"). Using the token later is safe.
+      // Grab the ID token immediately after sign-in, before auth-state listeners fire
+      // and before the Firestore SDK tries to reconnect. Using the token later is safe.
       const idToken   = await user.getIdToken();
       const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
 
-      // Step 3: Reload to get fresh emailVerified flag (non-fatal)
-      try {
-        await user.reload();
-      } catch (reloadErr) {
-        }
+      // Reload to get a fresh emailVerified flag (non-fatal if it fails)
+      try { await user.reload(); } catch {}
 
-      // Step 4: Check email verified
       if (!auth.currentUser.emailVerified) {
         setUnverifiedUser(auth.currentUser);
         await signOut(auth);
@@ -171,60 +194,47 @@ function LoginForm() {
         return;
       }
 
-      // Step 5: Fetch driver document via REST API.
-      // The Firestore SDK reports "client is offline" after auth-state changes.
-      // We bypass it entirely with a plain fetch using the token grabbed above.
-      const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
-
+      // Fetch driver document via REST API. The Firestore SDK reports "client is offline"
+      // after auth-state changes; fetch + token bypasses that entirely.
+      const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
       const restRes = await fetch(restUrl, {
-        headers: { 'Authorization': `Bearer ${idToken}` },
+        headers: { Authorization: `Bearer ${idToken}` },
       });
 
-      // Step 6: Check document exists
       if (restRes.status === 404) {
         await signOut(auth);
         setError('No driver account found. Please register first.');
         setLoading(false);
         return;
       }
-
       if (!restRes.ok) {
         const body = await restRes.json().catch(() => ({}));
         throw new Error(body?.error?.message || `Server error ${restRes.status}`);
       }
 
-      const json = await restRes.json();
+      const json   = await restRes.json();
+      const status = json?.fields?.status?.stringValue;
 
-      // Step 7: Check approval status
-      // Firestore REST API wraps values as { stringValue: '...' }
-      const driverData = {
-        status: json?.fields?.status?.stringValue,
-      };
-
-      if (driverData.status === 'pending') {
+      if (status === 'pending') {
         await signOut(auth);
-        setWarning('Your account is pending admin approval. We will notify you within 24-48 hours.');
+        setWarning('Your account is pending admin approval. We will notify you within 24–48 hours.');
         setLoading(false);
         return;
       }
-
-      if (driverData.status === 'rejected') {
+      if (status === 'rejected') {
         await signOut(auth);
         setError('Your application was rejected. Please contact support@ridex.com');
         setLoading(false);
         return;
       }
-
       // Treat 'approved' or missing status (legacy accounts) as approved
-      if (driverData.status === 'approved' || !driverData.status) {
+      if (status === 'approved' || !status) {
         navigate('/driver/dashboard');
         return;
       }
 
-      // Fallback for any other unexpected status value
-      setError(`Unexpected account status: "${driverData.status}". Contact support@ridex.com`);
+      setError(`Unexpected account status: "${status}". Contact support@ridex.com`);
       setLoading(false);
-
     } catch (err) {
       setError(getLoginErrorMessage(err.code));
       setLoading(false);
@@ -232,99 +242,93 @@ function LoginForm() {
   }
 
   return (
-    /* Login form - allows existing drivers to sign in */
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
 
-      {/* Email field */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          placeholder="driver@example.com"
-          autoComplete="email"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
+      {/* Live region — screen readers announce status changes without focus move */}
+      <div aria-live="polite" aria-atomic="true" className="space-y-2">
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+            <p className="text-red-400 text-sm">{error}</p>
+            {showResend && (
+              <div className="mt-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  className={`w-full py-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400
+                    text-sm font-semibold rounded-xl hover:bg-yellow-400/20 transition ${ring}`}
+                >
+                  Resend verification email
+                </button>
+                {resendMsg && (
+                  <p className="text-green-400 text-xs text-center">{resendMsg}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {warning && (
+          <div role="status" className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3">
+            <p className="text-yellow-400 text-sm">{warning}</p>
+          </div>
+        )}
+        {success && (
+          <div role="status" className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3">
+            <p className="text-green-400 text-sm">{success}</p>
+          </div>
+        )}
       </div>
 
-      {/* Password field with show/hide toggle */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Password</label>
-        <div className="relative">
-          <input
-            type={showPw ? 'text' : 'password'}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••"
-            autoComplete="current-password"
-            className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm pr-10"
-          />
-          <EyeToggle show={showPw} onToggle={() => setShowPw(v => !v)} />
-        </div>
-      </div>
+      <FormField
+        id="drv-login-email"
+        label="Email address"
+        type="email"
+        value={email}
+        onChange={e => setEmail(e.target.value)}
+        placeholder="driver@example.com"
+        autoComplete="email"
+        maxLength={254}
+      />
 
-      {/* Forgot password button - right aligned, yellow text */}
-      <div className="flex justify-end -mt-2">
+      <FormField
+        id="drv-login-password"
+        label="Password"
+        type={showPw ? 'text' : 'password'}
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        placeholder="••••••••"
+        autoComplete="current-password"
+        maxLength={128}
+        rightElement={
+          <button
+            type="button"
+            onClick={() => setShowPw(v => !v)}
+            aria-label={showPw ? 'Hide password' : 'Show password'}
+            className={`text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+          >
+            <EyeIcon open={showPw} />
+          </button>
+        }
+      />
+
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={handleForgotPassword}
-          className="text-yellow-400 text-sm hover:text-yellow-300 transition"
+          className={`text-xs text-yellow-400 hover:underline ${ring} rounded`}
         >
-          Forgot Password?
+          Forgot password?
         </button>
       </div>
 
-      {/* Error message box */}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Warning message box (e.g. pending approval) */}
-      {warning && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 text-yellow-400 text-sm">
-          {warning}
-        </div>
-      )}
-
-      {/* Success message box (e.g. password reset sent) */}
-      {success && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm">
-          {success}
-        </div>
-      )}
-
-      {/* Resend verification email button - shown after unverified login attempt */}
-      {showResend && (
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={handleResendVerification}
-            className="w-full py-2.5 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 text-sm font-semibold rounded-xl hover:bg-yellow-400/20 transition"
-          >
-            Resend Verification Email
-          </button>
-          {resendMsg && (
-            <p className="text-green-400 text-xs text-center">{resendMsg}</p>
-          )}
-        </div>
-      )}
-
-      {/* Login submit button with loading spinner */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        className={`w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300
+          active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed
+          flex items-center justify-center ${ring} ${ringOffset}`}
       >
-        {loading && (
-          <svg className="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-        )}
-        {loading ? 'Signing in…' : 'Login'}
+        {loading && <Spinner />}
+        {loading ? 'Signing in…' : 'Log In'}
       </button>
     </form>
   );
@@ -335,137 +339,88 @@ function LoginForm() {
 // Handles new driver registration: collects all required details, creates a Firebase
 // Auth account, sends verification email, saves driver doc to Firestore with
 // status: 'pending', then signs out so the user must verify before logging in.
-//
-// IMPORTANT: In Firebase Console → Firestore Database → Rules
-// Change rules to this for testing (or set proper auth-based rules for production):
-// rules_version = '2';
-// service cloud.firestore {
-//   match /databases/{database}/documents {
-//     match /{document=**} {
-//       allow read, write: if true;
-//     }
-//   }
-// }
 function RegisterForm({ onSuccess }) {
-  // All registration form fields stored in a single object
-  // terms is included here so the new handleRegister function can check formData.terms
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
+    name:            '',
+    email:           '',
+    password:        '',
     confirmPassword: '',
-    phone: '',
-    city: '',
-    country: 'UK',
-    vehicleType: 'Sedan',
-    vehicleMake: '',
-    vehicleReg: '',
-    vehicleYear: '2020',
-    licenceNumber: '',
-    terms: false,
+    phone:           '',
+    city:            '',
+    country:         'UK',
+    vehicleType:     'Sedan',
+    vehicleMake:     '',
+    vehicleReg:      '',
+    vehicleYear:     '2020',
+    licenceNumber:   '',
+    terms:           false,
   });
 
-  // Show/hide toggles for password fields
   const [showPw, setShowPw]         = useState(false);
   const [showConfPw, setShowConfPw] = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+  const [success, setSuccess]       = useState('');
 
-  // UI feedback state — success lives inside this component so it always renders
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-  const [success, setSuccess] = useState('');
-
-  // Update a single field in formData by key
   function setField(key, value) {
     setFormData(prev => ({ ...prev, [key]: value }));
   }
 
-  // Password strength for the visual indicator bar
   const strength = getPasswordStrength(formData.password);
 
-  // Main register handler — called by button onClick (not form onSubmit)
-  // so there is no risk of the browser swallowing the event or double-firing.
-  // Uses finally{} to guarantee the spinner always stops.
-  const handleRegister = async () => {
-    // Reset all messages before starting
-    setError('');
-    setSuccess('');
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError(''); setSuccess('');
 
-    // Validate all required fields are filled
     if (
-      !formData.name ||
-      !formData.email ||
-      !formData.password ||
-      !formData.confirmPassword ||
-      !formData.phone ||
-      !formData.city ||
-      !formData.country ||
-      !formData.vehicleType ||
-      !formData.vehicleMake ||
-      !formData.vehicleReg ||
-      !formData.vehicleYear ||
-      !formData.licenceNumber
+      !formData.name || !formData.email || !formData.password ||
+      !formData.confirmPassword || !formData.phone || !formData.city ||
+      !formData.country || !formData.vehicleType || !formData.vehicleMake ||
+      !formData.vehicleReg || !formData.vehicleYear || !formData.licenceNumber
     ) {
       setError('Please fill in all fields before registering.');
       return;
     }
-
-    // Check passwords match
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match. Please try again.');
       return;
     }
-
-    // Check password length
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
-
-    // Check terms checkbox is ticked
     if (!formData.terms) {
       setError('Please agree to the Terms & Conditions to continue.');
       return;
     }
 
-    // Start loading — spinner shows, button disabled
     setLoading(true);
-
     try {
-      // Step 1: Create Firebase Auth account
-      const result = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-      const user = result.user;
+      const result = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const user   = result.user;
 
-      // Step 2: Update display name
       await updateProfile(user, { displayName: formData.name });
 
-      // Step 3: Send verification email
-      // Wrapped in its own try/catch so a failed email does NOT block registration
+      // Non-fatal — don't block registration if verification email fails to send
       try {
         await sendEmailVerification(user, {
           url: window.location.origin + '/driver/login',
           handleCodeInApp: false,
         });
-      } catch (emailError) {
-        // Don't block registration if email sending fails
-      }
+      } catch {}
 
-      // Step 4: Save driver document via REST API instead of the Firestore SDK.
+      // Save driver document via REST API instead of the Firestore SDK.
       // The SDK's setDoc hangs after createUserWithEmailAndPassword because the
       // onAuthStateChanged listener fires mid-write and leaves the SDK in an
-      // inconsistent auth state. Using fetch + the user's ID token bypasses that
-      // timing issue entirely.
-      const idToken    = await user.getIdToken();
-      const projectId  = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-      const restUrl    = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
+      // inconsistent auth state. Using fetch + the user's ID token bypasses that.
+      const idToken   = await user.getIdToken();
+      const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+      const restUrl   = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/drivers/${user.uid}`;
 
       const restResponse = await fetch(restUrl, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type':  'application/json',
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
@@ -498,305 +453,268 @@ function RegisterForm({ onSuccess }) {
         throw new Error(errData?.error?.message || `Firestore REST error ${restResponse.status}`);
       }
 
-      // Step 5: Sign out immediately — user must verify email before logging in
+      // Sign out immediately — user must verify email before logging in
       await signOut(auth);
 
-      // Step 6: Show success message inside this component
       setSuccess(
         'Registration successful! Please check your email to verify your account. ' +
-        'Once verified, our team will review your application within 24-48 hours.'
+        'Once verified, our team will review your application within 24–48 hours.'
       );
-
-      // Step 7: Clear all form fields
       setFormData({
-        name: '',
-        email: '',
-        password: '',
-        confirmPassword: '',
-        phone: '',
-        city: '',
-        country: 'UK',
-        vehicleType: 'Sedan',
-        vehicleMake: '',
-        vehicleReg: '',
-        vehicleYear: '2020',
-        licenceNumber: '',
-        terms: false,
+        name: '', email: '', password: '', confirmPassword: '',
+        phone: '', city: '', country: 'UK', vehicleType: 'Sedan',
+        vehicleMake: '', vehicleReg: '', vehicleYear: '2020',
+        licenceNumber: '', terms: false,
       });
 
-      // Step 8: Switch to login tab after 3 seconds
-      setTimeout(() => {
-        setSuccess('');
-        onSuccess();
-      }, 3000);
+      // Switch to the login tab after the success message has been visible for 3 s
+      setTimeout(() => { setSuccess(''); onSuccess(); }, 3000);
 
     } catch (err) {
-
-      // Handle Firebase specific errors with friendly messages
-      const errorMessages = {
-        'auth/email-already-in-use': 'This email is already registered. Please login instead.',
-        'auth/weak-password': 'Password must be at least 6 characters.',
-        'auth/invalid-email': 'Please enter a valid email address.',
+      const msgs = {
+        'auth/email-already-in-use':   'This email is already registered. Please login instead.',
+        'auth/weak-password':          'Password must be at least 6 characters.',
+        'auth/invalid-email':          'Please enter a valid email address.',
         'auth/network-request-failed': 'Network error. Please check your internet connection.',
-        'auth/too-many-requests': 'Too many attempts. Please try again later.',
+        'auth/too-many-requests':      'Too many attempts. Please try again later.',
       };
-      setError(errorMessages[err.code] || `Registration failed: ${err.message}`);
+      setError(msgs[err.code] || `Registration failed: ${err.message}`);
     } finally {
-      // Always stop loading spinner — whether success or error
       setLoading(false);
     }
   };
 
   return (
-    /* Registration form - allows new drivers to apply to join RideX */
-    <div className="flex flex-col gap-4">
+    <form onSubmit={handleRegister} noValidate className="space-y-4">
 
-      {/* Full Name */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Full Name</label>
-        <input
-          type="text"
-          value={formData.name}
-          onChange={e => setField('name', e.target.value)}
-          placeholder="John Smith"
-          autoComplete="name"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
+      {/* Live region for registration feedback */}
+      <div aria-live="polite" aria-atomic="true" className="space-y-2">
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+        {success && (
+          <div role="status" className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3">
+            <p className="text-green-400 text-sm">{success}</p>
+          </div>
+        )}
       </div>
 
-      {/* Email */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Email</label>
-        <input
-          type="email"
-          value={formData.email}
-          onChange={e => setField('email', e.target.value)}
-          placeholder="driver@example.com"
-          autoComplete="email"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-name"
+        label="Full name"
+        type="text"
+        value={formData.name}
+        onChange={e => setField('name', e.target.value)}
+        placeholder="John Smith"
+        autoComplete="name"
+        maxLength={100}
+      />
 
-      {/* Password with strength indicator */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Password</label>
-        <div className="relative">
-          <input
-            type={showPw ? 'text' : 'password'}
-            value={formData.password}
-            onChange={e => setField('password', e.target.value)}
-            placeholder="••••••••"
-            autoComplete="new-password"
-            className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm pr-10"
-          />
-          <EyeToggle show={showPw} onToggle={() => setShowPw(v => !v)} />
-        </div>
-        {/* Password strength bar - shows weak/medium/strong */}
+      <FormField
+        id="reg-email"
+        label="Email address"
+        type="email"
+        value={formData.email}
+        onChange={e => setField('email', e.target.value)}
+        placeholder="driver@example.com"
+        autoComplete="email"
+        maxLength={254}
+      />
+
+      {/* Password + inline strength indicator */}
+      <div className="space-y-1">
+        <FormField
+          id="reg-password"
+          label="Password"
+          type={showPw ? 'text' : 'password'}
+          value={formData.password}
+          onChange={e => setField('password', e.target.value)}
+          placeholder="Min. 6 characters"
+          autoComplete="new-password"
+          maxLength={128}
+          rightElement={
+            <button
+              type="button"
+              onClick={() => setShowPw(v => !v)}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+              className={`text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+            >
+              <EyeIcon open={showPw} />
+            </button>
+          }
+        />
         {strength && (
-          <div className="mt-1">
+          <div aria-live="polite" className="pt-1">
             <div className="w-full bg-gray-800 rounded-full h-1.5">
               <div className={`h-1.5 rounded-full transition-all ${strength.color} ${strength.width}`} />
             </div>
             <p className={`text-xs mt-1 ${
-              strength.label === 'Weak' ? 'text-red-400' :
+              strength.label === 'Weak'   ? 'text-red-400'    :
               strength.label === 'Medium' ? 'text-yellow-400' : 'text-green-400'
             }`}>{strength.label}</p>
           </div>
         )}
       </div>
 
-      {/* Confirm Password */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Confirm Password</label>
-        <div className="relative">
-          <input
-            type={showConfPw ? 'text' : 'password'}
-            value={formData.confirmPassword}
-            onChange={e => setField('confirmPassword', e.target.value)}
-            placeholder="••••••••"
-            autoComplete="new-password"
-            className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm pr-10"
-          />
-          <EyeToggle show={showConfPw} onToggle={() => setShowConfPw(v => !v)} />
-        </div>
-      </div>
+      <FormField
+        id="reg-confirm-password"
+        label="Confirm password"
+        type={showConfPw ? 'text' : 'password'}
+        value={formData.confirmPassword}
+        onChange={e => setField('confirmPassword', e.target.value)}
+        placeholder="••••••••"
+        autoComplete="new-password"
+        maxLength={128}
+        rightElement={
+          <button
+            type="button"
+            onClick={() => setShowConfPw(v => !v)}
+            aria-label={showConfPw ? 'Hide confirm password' : 'Show confirm password'}
+            className={`text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+          >
+            <EyeIcon open={showConfPw} />
+          </button>
+        }
+      />
 
-      {/* Phone Number */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Phone Number</label>
-        <input
-          type="tel"
-          value={formData.phone}
-          onChange={e => setField('phone', e.target.value)}
-          placeholder="+44 7700 900000"
-          autoComplete="tel"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-phone"
+        label="Phone number"
+        type="tel"
+        value={formData.phone}
+        onChange={e => setField('phone', e.target.value)}
+        placeholder="+44 7700 900000"
+        autoComplete="tel"
+        maxLength={20}
+      />
 
-      {/* City */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">City</label>
-        <input
-          type="text"
-          value={formData.city}
-          onChange={e => setField('city', e.target.value)}
-          placeholder="London"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-city"
+        label="City"
+        type="text"
+        value={formData.city}
+        onChange={e => setField('city', e.target.value)}
+        placeholder="London"
+        autoComplete="address-level2"
+        maxLength={100}
+      />
 
-      {/* Country selector for multi-country support */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Country</label>
-        <select
-          value={formData.country}
-          onChange={e => setField('country', e.target.value)}
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white focus:outline-none focus:border-yellow-400 transition text-sm"
-        >
-          {COUNTRIES.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </div>
+      <SelectField
+        id="reg-country"
+        label="Country"
+        value={formData.country}
+        onChange={e => setField('country', e.target.value)}
+      >
+        {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+      </SelectField>
 
-      {/* Vehicle Type */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Vehicle Type</label>
-        <select
-          value={formData.vehicleType}
-          onChange={e => setField('vehicleType', e.target.value)}
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white focus:outline-none focus:border-yellow-400 transition text-sm"
-        >
-          {VEHICLE_TYPES.map(t => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-      </div>
+      <SelectField
+        id="reg-vehicle-type"
+        label="Vehicle type"
+        value={formData.vehicleType}
+        onChange={e => setField('vehicleType', e.target.value)}
+      >
+        {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+      </SelectField>
 
-      {/* Vehicle Make & Model */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Vehicle Make &amp; Model</label>
-        <input
-          type="text"
-          value={formData.vehicleMake}
-          onChange={e => setField('vehicleMake', e.target.value)}
-          placeholder="e.g. Toyota Camry"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-vehicle-make"
+        label="Vehicle make &amp; model"
+        type="text"
+        value={formData.vehicleMake}
+        onChange={e => setField('vehicleMake', e.target.value)}
+        placeholder="e.g. Toyota Camry"
+        maxLength={100}
+      />
 
-      {/* Vehicle Registration Number */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Vehicle Registration Number</label>
-        <input
-          type="text"
-          value={formData.vehicleReg}
-          onChange={e => setField('vehicleReg', e.target.value)}
-          placeholder="AB12 CDE"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-vehicle-reg"
+        label="Vehicle registration"
+        type="text"
+        value={formData.vehicleReg}
+        onChange={e => setField('vehicleReg', e.target.value)}
+        placeholder="AB12 CDE"
+        autoCapitalize="characters"
+        maxLength={20}
+      />
 
-      {/* Vehicle Year */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Vehicle Year</label>
-        <select
-          value={formData.vehicleYear}
-          onChange={e => setField('vehicleYear', e.target.value)}
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white focus:outline-none focus:border-yellow-400 transition text-sm"
-        >
-          {VEHICLE_YEARS.map(y => (
-            <option key={y} value={String(y)}>{y}</option>
-          ))}
-        </select>
-      </div>
+      <SelectField
+        id="reg-vehicle-year"
+        label="Vehicle year"
+        value={formData.vehicleYear}
+        onChange={e => setField('vehicleYear', e.target.value)}
+      >
+        {VEHICLE_YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+      </SelectField>
 
-      {/* Driving Licence Number */}
-      <div className="flex flex-col gap-1">
-        <label className="text-gray-400 text-sm font-medium">Driving Licence Number</label>
-        <input
-          type="text"
-          value={formData.licenceNumber}
-          onChange={e => setField('licenceNumber', e.target.value)}
-          placeholder="SMITH901157AB9IJ"
-          className="w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700 focus:outline-none focus:border-yellow-400 transition text-sm"
-        />
-      </div>
+      <FormField
+        id="reg-licence"
+        label="Driving licence number"
+        type="text"
+        value={formData.licenceNumber}
+        onChange={e => setField('licenceNumber', e.target.value)}
+        placeholder="SMITH901157AB9IJ"
+        autoCapitalize="characters"
+        maxLength={50}
+      />
 
-      {/* Terms and conditions agreement - required before registering */}
+      {/* Terms checkbox — label wraps input so association is implicit */}
       <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
           checked={formData.terms}
           onChange={e => setField('terms', e.target.checked)}
-          className="mt-0.5 accent-yellow-400 w-4 h-4 flex-shrink-0"
+          className={`mt-0.5 accent-yellow-400 w-4 h-4 flex-shrink-0 ${ring} rounded`}
         />
         <span className="text-gray-400 text-sm leading-snug">
           I agree to the RideX Driver{' '}
-          <span className="text-yellow-400">Terms &amp; Conditions</span>{' '}
-          and{' '}
-          <span className="text-yellow-400">Privacy Policy</span>
+          <a href="/terms" className={`text-yellow-400 hover:underline ${ring} rounded`}>
+            Terms &amp; Conditions
+          </a>
+          {' '}and{' '}
+          <a href="/privacy" className={`text-yellow-400 hover:underline ${ring} rounded`}>
+            Privacy Policy
+          </a>
         </span>
       </label>
 
-      {/* Register button - disabled while loading to prevent double submission */}
       <button
-        onClick={handleRegister}
+        type="submit"
         disabled={loading}
-        className="w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className={`w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300
+          active:bg-yellow-500 transition disabled:opacity-60 disabled:cursor-not-allowed
+          flex items-center justify-center ${ring} ${ringOffset}`}
       >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-            </svg>
-            Creating account...
-          </span>
-        ) : 'Create Account'}
+        {loading && <Spinner />}
+        {loading ? 'Creating account…' : 'Create Account'}
       </button>
-
-      {/* Show error message if registration fails */}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mt-4">
-          <p className="text-red-400 text-sm">{error}</p>
-        </div>
-      )}
-
-      {/* Show success message when registration completes */}
-      {success && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 mt-4">
-          <p className="text-green-400 text-sm">{success}</p>
-        </div>
-      )}
-    </div>
+    </form>
   );
 }
 
 // ── DriverLogin (main page) ────────────────────────────────────────────────────
 
-// Top-level page component. Renders the nav bar, role tabs, form toggle,
-// and either the LoginForm or RegisterForm based on active tab state.
+// Top-level page component. Renders the page header, portal nav, and either
+// LoginForm or RegisterForm based on the active tab — both are always mounted
+// so form state (errors, partial inputs) is preserved when switching tabs.
 export default function DriverLogin() {
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // 'login' | 'register' — which form tab is currently visible
-  // Defaults to 'register' if ?tab=register is in the URL (e.g. from "Become a Driver" on landing page)
-  const [activeForm, setActiveForm] = useState(
+  // Default to 'register' when opened via ?tab=register (e.g. "Become a Driver" CTA)
+  const [activeForm, setActiveForm]       = useState(
     searchParams.get('tab') === 'register' ? 'register' : 'login'
   );
-
-  // Success message shown after a completed registration
   const [registerSuccess, setRegisterSuccess] = useState('');
 
-  // Called by RegisterForm on successful registration:
-  // shows the success banner, clears it after 3 s, and switches to login tab
+  // Called by RegisterForm after a successful registration:
+  // shows a success banner above the tabs, then switches to login after 3 s
   function handleRegisterSuccess() {
     setRegisterSuccess(
       'Registration successful! Please check your email to verify your account. ' +
-      'Once verified our team will review your application within 24-48 hours.'
+      'Once verified our team will review your application within 24–48 hours.'
     );
     setTimeout(() => {
       setRegisterSuccess('');
@@ -805,57 +723,54 @@ export default function DriverLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex flex-col">
+    <div className="min-h-screen bg-black text-white flex flex-col">
 
-      {/* Top bar with back button and RideX logo */}
-      <div className="flex items-center justify-between px-4 py-4">
-        {/* Back button - navigates to landing page */}
+      {/* ── Page header: back navigation + brand ─────────────────────────── */}
+      <header className="flex items-center justify-between px-4 py-4">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition text-sm"
           aria-label="Go back to home"
+          className={`flex items-center gap-2 text-gray-400 hover:text-white transition text-sm ${ring} rounded`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Back
         </button>
 
-        {/* RideX logo: yellow circle with black "R" + "RideX" text */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center">
+        <a href="/" aria-label="RideX — home" className={`flex items-center gap-2 ${ring} rounded-lg`}>
+          <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
             <span className="text-black font-black text-sm">R</span>
           </div>
-          <span className="text-white font-black text-lg tracking-tight">RideX</span>
-        </div>
+          <span className="font-black text-lg tracking-tight">RideX</span>
+        </a>
 
-        {/* Spacer to keep logo centered */}
-        <div className="w-16" />
-      </div>
+        {/* Spacer keeps logo visually centred */}
+        <div className="w-16" aria-hidden="true" />
+      </header>
 
-      {/* Role selector tabs - switches between customer and driver portals */}
-      <div className="flex border-b border-gray-800 px-4">
-        {/* Customer tab - navigates away to the customer login page */}
+      {/* ── Portal selector: Customer vs Driver ──────────────────────────── */}
+      <nav aria-label="Portal selector" className="flex border-b border-gray-800 px-4">
         <button
           onClick={() => navigate('/login')}
-          className="flex-1 py-3 text-sm font-semibold text-gray-500 hover:text-gray-300 active:text-white transition"
+          className={`flex-1 py-3 text-sm font-semibold text-gray-500 hover:text-gray-300 transition ${ring}`}
         >
           Customer
         </button>
-        {/* Driver tab - active on this page */}
-        <button
-          className="flex-1 py-3 text-sm font-semibold text-yellow-400 border-b-2 border-yellow-400"
+        {/* aria-current="page" marks this as the active portal */}
+        <span
+          aria-current="page"
+          className="flex-1 py-3 text-sm font-semibold text-yellow-400 border-b-2 border-yellow-400 text-center"
         >
           Driver
-        </button>
-      </div>
+        </span>
+      </nav>
 
-      {/* Main scrollable content area */}
-      <div className="flex-1 flex items-start justify-center px-4 py-8">
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <main className="flex-1 flex items-start justify-center px-4 py-8">
         <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-md">
 
-          {/* Page heading */}
-          <h1 className="text-white font-black text-2xl mb-1">
+          <h1 className="font-black text-2xl mb-1">
             {activeForm === 'login' ? 'Driver Login' : 'Become a Driver'}
           </h1>
           <p className="text-gray-500 text-sm mb-6">
@@ -864,45 +779,61 @@ export default function DriverLogin() {
               : 'Apply to join the RideX driver network'}
           </p>
 
-          {/* Toggle between Login and Register forms */}
-          <div className="bg-black border border-gray-800 rounded-full p-1 flex mb-6">
+          {/* Success banner shown after registration while the tab switches */}
+          {registerSuccess && (
+            <div
+              aria-live="polite"
+              role="status"
+              className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm mb-4"
+            >
+              {registerSuccess}
+            </div>
+          )}
+
+          {/* Login / Register toggle — ARIA tab pattern */}
+          <div
+            role="tablist"
+            aria-label="Authentication mode"
+            className="bg-black border border-gray-800 rounded-full p-1 flex mb-6"
+          >
             <button
+              id="tab-login"
+              role="tab"
+              aria-selected={activeForm === 'login'}
+              aria-controls="panel-login"
               onClick={() => setActiveForm('login')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${
-                activeForm === 'login'
-                  ? 'bg-yellow-400 text-black font-black'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
+              className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${ring}
+                ${activeForm === 'login'
+                  ? 'bg-yellow-400 text-black'
+                  : 'text-gray-500 hover:text-gray-300'}`}
             >
               Login
             </button>
             <button
+              id="tab-register"
+              role="tab"
+              aria-selected={activeForm === 'register'}
+              aria-controls="panel-register"
               onClick={() => setActiveForm('register')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${
-                activeForm === 'register'
-                  ? 'bg-yellow-400 text-black font-black'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
+              className={`flex-1 py-2 text-sm font-semibold rounded-full transition ${ring}
+                ${activeForm === 'register'
+                  ? 'bg-yellow-400 text-black'
+                  : 'text-gray-500 hover:text-gray-300'}`}
             >
               Register
             </button>
           </div>
 
-          {/* Registration success banner - shown for 3 s after successful registration */}
-          {registerSuccess && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm mb-4">
-              {registerSuccess}
-            </div>
-          )}
-
-          {/* Render the active form */}
-          {activeForm === 'login' ? (
+          {/* Both panels always mounted to preserve form state when switching tabs */}
+          <div id="panel-login" role="tabpanel" aria-labelledby="tab-login" hidden={activeForm !== 'login'}>
             <LoginForm />
-          ) : (
+          </div>
+          <div id="panel-register" role="tabpanel" aria-labelledby="tab-register" hidden={activeForm !== 'register'}>
             <RegisterForm onSuccess={handleRegisterSuccess} />
-          )}
+          </div>
+
         </div>
-      </div>
+      </main>
     </div>
   );
 }
