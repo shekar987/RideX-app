@@ -91,7 +91,7 @@ function SkeletonCard() {
 // ─────────────────────────────────────────────
 function ToastContainer({ toasts }) {
   return (
-    <div className="fixed bottom-[5.5rem] right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-[calc(100vw-2rem)]">
+    <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-[calc(100vw-2rem)]">
       {toasts.map(t => (
         <div
           key={t.id}
@@ -1194,6 +1194,10 @@ export default function DriverDashboard() {
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
+  // ── Online duration timer ──
+  const [onlineMinutes, setOnlineMinutes] = useState(0);
+  const onlineStartRef = useRef(null);
+
   const showToast = useCallback((message, type = 'success') => {
     const id = ++toastIdRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
@@ -1260,6 +1264,20 @@ export default function DriverDashboard() {
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, [isOnline, driverUid]);
+
+  // ── Track minutes online this session ──
+  useEffect(() => {
+    if (!isOnline) {
+      onlineStartRef.current = null;
+      setOnlineMinutes(0);
+      return;
+    }
+    if (!onlineStartRef.current) onlineStartRef.current = Date.now();
+    const tick = () => setOnlineMinutes(Math.floor((Date.now() - onlineStartRef.current) / 60000));
+    tick();
+    const intervalId = setInterval(tick, 60000);
+    return () => clearInterval(intervalId);
+  }, [isOnline]);
 
   // ── Available rides listener ──
   const prevRidesRef = useRef([]);
@@ -1521,6 +1539,7 @@ export default function DriverDashboard() {
               otpError={otpError}
               setOtpError={setOtpError}
               verifyOtp={verifyOtp}
+              onlineMinutes={onlineMinutes}
             />
           </section>
 
