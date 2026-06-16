@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 const ring = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
@@ -303,6 +303,7 @@ function DriversSection() {
   const drivers       = useDrivers();
   const [filter,      setFilter]      = useState('all');
   const [loadingRows, setLoadingRows] = useState({});
+  const [actionError, setActionError] = useState('');
 
   const pending  = drivers ? drivers.filter(d => d.status === 'pending')  : [];
   const approved = drivers ? drivers.filter(d => d.status === 'approved') : [];
@@ -315,10 +316,30 @@ function DriversSection() {
     drivers
   );
 
+  // Driver self-writes to `status` are blocked by firestore.rules — approval/
+  // rejection must go through the admin-only setDriverStatus Cloud Function.
   const setStatus = async (driverUid, newStatus) => {
+    setActionError('');
     setLoadingRows(r => ({ ...r, [driverUid]: true }));
     try {
-      await updateDoc(doc(db, 'drivers', driverUid), { status: newStatus });
+      const idToken = await auth.currentUser.getIdToken();
+      const baseUrl = process.env.REACT_APP_FUNCTIONS_BASE_URL
+        || `https://us-central1-${process.env.REACT_APP_FIREBASE_PROJECT_ID}.cloudfunctions.net`;
+
+      const res = await fetch(`${baseUrl}/setDriverStatus`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ driverId: driverUid, status: newStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setActionError(data.error || 'Failed to update driver status.');
+      }
+    } catch {
+      setActionError('Failed to update driver status. Please try again.');
     } finally {
       setLoadingRows(r => { const next = { ...r }; delete next[driverUid]; return next; });
     }
@@ -380,6 +401,12 @@ function DriversSection() {
 
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
         <p className="text-white font-bold mb-4">Driver Applications</p>
+
+        {actionError && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4">
+            <p className="text-red-400 text-sm">{actionError}</p>
+          </div>
+        )}
 
         {visible === null ? (
           <div className="space-y-3">

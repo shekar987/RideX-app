@@ -12,7 +12,7 @@ import {
 import { auth, db } from '../../firebase';
 import {
   doc, updateDoc, collection, query, where, orderBy,
-  limit, onSnapshot, runTransaction, increment, serverTimestamp,
+  limit, onSnapshot, runTransaction, serverTimestamp,
   getDocs, startAfter,
 } from 'firebase/firestore';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
@@ -1020,6 +1020,88 @@ function HistoryTab({ driver }) {
 // ─────────────────────────────────────────────
 // TAB 4 — PROFILE
 // ─────────────────────────────────────────────
+function getFunctionsBaseUrl() {
+  return process.env.REACT_APP_FUNCTIONS_BASE_URL
+    || `https://us-central1-${process.env.REACT_APP_FIREBASE_PROJECT_ID}.cloudfunctions.net`;
+}
+
+// ─────────────────────────────────────────────
+// Stripe Connect payout setup card — shown in Profile tab
+// ─────────────────────────────────────────────
+function PayoutSetupCard({ showToast }) {
+  const [status,  setStatus]  = useState(null); // null = loading
+  const [starting, setStarting] = useState(false);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`${getFunctionsBaseUrl()}/connectAccountStatus`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json();
+      setStatus(res.ok ? data : { connected: false });
+    } catch {
+      setStatus({ connected: false });
+    }
+  }, []);
+
+  useEffect(() => { checkStatus(); }, [checkStatus]);
+
+  const startOnboarding = async () => {
+    setStarting(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`${getFunctionsBaseUrl()}/createConnectAccount`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        showToast(data.error || 'Could not start payout setup.', 'error');
+        setStarting(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      showToast('Could not start payout setup. Please try again.', 'error');
+      setStarting(false);
+    }
+  };
+
+  const ready   = status?.connected && status.payoutsEnabled;
+  const pending = status?.connected && !status.payoutsEnabled;
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-sm shadow-black/40">
+      <SectionHeader title="Payouts" subtitle="Powered by Stripe Connect — your 80% share is paid out automatically" />
+
+      {status === null ? (
+        <SkeletonLine className="h-10 w-full" />
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border
+            ${ready
+              ? 'bg-green-500/15 border-green-500/30 text-green-400'
+              : pending
+                ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400'
+                : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ready ? 'bg-green-400' : pending ? 'bg-yellow-400' : 'bg-gray-500'}`} />
+            {ready ? 'Ready to receive payouts' : pending ? 'Verification pending' : 'Not set up'}
+          </span>
+
+          <button
+            onClick={startOnboarding}
+            disabled={starting}
+            className="px-4 py-2 bg-yellow-400 text-black text-xs font-black rounded-xl hover:bg-yellow-300 transition disabled:opacity-60 flex-shrink-0"
+          >
+            {starting ? 'Loading…' : ready ? 'Manage' : pending ? 'Continue setup' : 'Set up payouts'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfileTab({ driver, setDriver, showToast }) {
   const navigate = useNavigate();
   const [form,   setForm]   = useState({ name: '', phone: '', city: '' });
@@ -1092,6 +1174,8 @@ function ProfileTab({ driver, setDriver, showToast }) {
         <StatCard label="All Time"       value={`£${parseFloat(driver?.earnings || 0).toFixed(0)}`} accent />
         <StatCard label="Rating"         value={`${parseFloat(driver?.rating || 5).toFixed(1)}`} />
       </div>
+
+      <PayoutSetupCard showToast={showToast} />
 
       {/* Editable info */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4 shadow-sm shadow-black/40">
@@ -1236,6 +1320,15 @@ export default function DriverDashboard() {
         const data = Object.fromEntries(
           Object.entries(fields).map(([k, v]) => [k, parse(v)])
         );
+
+        // Re-check approval status on every load — a driver's session can outlive
+        // an admin rejecting them after their last login, so this can't only be
+        // checked at sign-in time (see DriverLogin.jsx LoginForm).
+        if (data.status && data.status !== 'approved') {
+          await signOut(auth);
+          navigate('/driver/login');
+          return;
+        }
 
         setDriver({ uid: user.uid, ...data });
         setIsOnline(data.isOnline || false);
@@ -1421,39 +1514,42 @@ export default function DriverDashboard() {
     await updateRideStatus(ride.id, 'in_progress');
   };
 
-  // ── Complete ride (single transaction) ──
+  // ── Complete ride ──
+  // Earnings are computed server-side from the ride's stored price (never
+  // trusted from the client) and the 80% driver share is transferred via
+  // Stripe Connect once payouts are enabled — see functions/index.js completeRide.
   const completeRide = async ride => {
     try {
-      const driverEarnings = parseFloat(ride.price || 0) * 0.8;
-      const platformFee    = parseFloat(ride.price || 0) * 0.2;
+      const idToken = await auth.currentUser.getIdToken();
 
-      const rideRef   = doc(db, 'rides',   ride.id);
-      const driverRef = doc(db, 'drivers', driver.uid);
-
-      await runTransaction(db, async transaction => {
-        transaction.update(rideRef, {
-          status:         'completed',
-          completedAt:    serverTimestamp(),
-          driverEarnings: driverEarnings,
-          platformFee:    platformFee,
-        });
-        transaction.update(driverRef, {
-          earnings:      increment(driverEarnings),
-          todayEarnings: increment(driverEarnings),
-          weekEarnings:  increment(driverEarnings),
-          totalRides:    increment(1),
-        });
+      const res = await fetch(`${getFunctionsBaseUrl()}/completeRide`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ rideId: ride.id }),
       });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to complete ride. Please try again.', 'error');
+        return;
+      }
 
       setDriver(prev => ({
         ...prev,
-        earnings:      (parseFloat(prev?.earnings      || 0) + driverEarnings),
-        todayEarnings: (parseFloat(prev?.todayEarnings || 0) + driverEarnings),
-        weekEarnings:  (parseFloat(prev?.weekEarnings  || 0) + driverEarnings),
+        earnings:      (parseFloat(prev?.earnings      || 0) + data.driverEarnings),
+        todayEarnings: (parseFloat(prev?.todayEarnings || 0) + data.driverEarnings),
+        weekEarnings:  (parseFloat(prev?.weekEarnings  || 0) + data.driverEarnings),
         totalRides:    (parseInt(prev?.totalRides       || 0) + 1),
       }));
 
-      setCompletedRide({ ...ride, driverEarnings, platformFee });
+      if (!data.transferred) {
+        showToast('Ride completed! Set up payouts in your profile to receive earnings.', 'warning');
+      }
+
+      setCompletedRide({ ...ride, driverEarnings: data.driverEarnings, platformFee: data.platformFee });
       setShowReceipt(true);
     } catch (_) {
       showToast('Failed to complete ride. Please try again.', 'error');

@@ -8,6 +8,13 @@ import { auth } from '../firebase';
 // Loaded once at module level — never recreated on re-renders
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 
+// Same derivation pattern documented in .env.example — override for non-default regions.
+function getFunctionsBaseUrl() {
+  if (process.env.REACT_APP_FUNCTIONS_BASE_URL) return process.env.REACT_APP_FUNCTIONS_BASE_URL;
+  const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+  return projectId ? `https://us-central1-${projectId}.cloudfunctions.net` : '';
+}
+
 const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: true,
   style: {
@@ -99,7 +106,7 @@ function PaymentForm({ price, rideDetails }) {
     setLoading(true);
 
     const cardElement = elements.getElement(CardElement);
-    const { error: stripeError } = await stripe.createPaymentMethod({
+    const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
       type: 'card',
       card: cardElement,
     });
@@ -116,10 +123,60 @@ function PaymentForm({ price, rideDetails }) {
       return;
     }
 
-    // Phase 4: wire up Stripe Connect backend here (createPaymentIntent Cloud Function).
-    // Card is validated by Stripe above — simulate processing delay then proceed.
-    await new Promise(r => setTimeout(r, 1000));
-    navigate('/status', { state: { ride: rideDetails } });
+    if (!rideDetails.rideId) {
+      setError('We could not find your saved ride. Please go back and book again.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const baseUrl = getFunctionsBaseUrl();
+
+      const res = await fetch(`${baseUrl}/createPaymentIntent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          paymentMethodId: paymentMethod.id,
+          rideId: rideDetails.rideId,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.requiresAction) {
+        // 3D Secure step-up. Confirm directly with Stripe — do NOT call
+        // createPaymentIntent again, that would charge the card a second time.
+        // The existing PaymentIntent transitions to 'succeeded' here, and the
+        // webhook marks the ride paid in Firestore shortly after.
+        const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret);
+        if (confirmError) {
+          setError(confirmError.message);
+          setLoading(false);
+          return;
+        }
+        if (paymentIntent?.status !== 'succeeded') {
+          setError('Payment could not be completed. Please try again.');
+          setLoading(false);
+          return;
+        }
+        navigate('/status', { state: { ride: rideDetails } });
+        return;
+      }
+
+      if (!data.success) {
+        setError(data.error || 'Payment could not be completed. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      navigate('/status', { state: { ride: rideDetails } });
+    } catch {
+      setError('Payment failed. Please check your connection and try again.');
+      setLoading(false);
+    }
   };
 
   return (

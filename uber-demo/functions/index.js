@@ -388,6 +388,246 @@ exports.createPaymentIntent = onRequest((req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /setDriverStatus
+// Admin-only. Approves or rejects a driver application. Driver self-writes to
+// the `status` field are blocked by firestore.rules — this is the only path
+// that can change it.
+// Body: { driverId, status: 'approved' | 'rejected' }
+// ─────────────────────────────────────────────────────────────────────────────
+exports.setDriverStatus = onRequest((req, res) => {
+    compressResponse(req, res, () => {
+        corsHandler(req, res, async () => {
+            setSecurityHeaders(res);
+            if (req.method === 'OPTIONS') return res.sendStatus(204);
+            if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+            const decoded = await verifyAuth(req);
+            if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+            const adminEmail = process.env.ADMIN_EMAIL;
+            if (!adminEmail || decoded.email !== adminEmail) {
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+
+            const driverId  = sanitiseString(req.body?.driverId || '');
+            const newStatus = sanitiseString(req.body?.status || '');
+
+            if (!FIRESTORE_ID_RE.test(driverId)) return res.status(400).json({ error: 'Invalid driver reference.' });
+            if (!['approved', 'rejected', 'pending'].includes(newStatus)) {
+                return res.status(400).json({ error: 'Invalid status.' });
+            }
+
+            try {
+                const ref  = db.collection('drivers').doc(driverId);
+                const snap = await ref.get();
+                if (!snap.exists) return res.status(404).json({ error: 'Driver not found.' });
+
+                await ref.update({ status: newStatus });
+                logger.info('Driver status updated', { driverId, newStatus, by: decoded.email });
+                return res.json({ success: true });
+            } catch (err) {
+                logger.error('setDriverStatus failed', { driverId, message: err?.message });
+                return res.status(500).json({ error: 'Failed to update driver status.' });
+            }
+        });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /createConnectAccount
+// Driver-only. Creates (if needed) a Stripe Express connected account for the
+// calling driver and returns an onboarding link. Driver must already have an
+// approved driver profile.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.createConnectAccount = onRequest((req, res) => {
+    compressResponse(req, res, () => {
+        corsHandler(req, res, async () => {
+            setSecurityHeaders(res);
+            if (req.method === 'OPTIONS') return res.sendStatus(204);
+            if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+            const decoded = await verifyAuth(req);
+            if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+            const driverRef = db.collection('drivers').doc(decoded.uid);
+            const driverSnap = await driverRef.get();
+            if (!driverSnap.exists) return res.status(404).json({ error: 'Driver profile not found.' });
+
+            const driver = driverSnap.data();
+            const appBaseUrl = process.env.APP_BASE_URL || allowedOrigins[0];
+            if (!appBaseUrl) return res.status(500).json({ error: 'Server is not configured for onboarding redirects.' });
+
+            try {
+                let accountId = driver.stripeAccountId;
+
+                if (!accountId) {
+                    const account = await getStripe().accounts.create({
+                        type: 'express',
+                        country: 'GB',
+                        email: decoded.email,
+                        capabilities: {
+                            transfers:    { requested: true },
+                            card_payments: { requested: true },
+                        },
+                        business_type: 'individual',
+                        metadata: { driverId: decoded.uid },
+                    });
+                    accountId = account.id;
+                    await driverRef.update({ stripeAccountId: accountId, payoutsEnabled: false, chargesEnabled: false });
+                }
+
+                const accountLink = await getStripe().accountLinks.create({
+                    account: accountId,
+                    refresh_url: `${appBaseUrl}/driver/dashboard?connect=refresh`,
+                    return_url:  `${appBaseUrl}/driver/dashboard?connect=return`,
+                    type: 'account_onboarding',
+                });
+
+                return res.json({ url: accountLink.url });
+            } catch (err) {
+                logger.error('createConnectAccount failed', { driverId: decoded.uid, message: err?.message });
+                return res.status(500).json({ error: 'Could not start payout setup. Please try again.' });
+            }
+        });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /connectAccountStatus
+// Driver-only. Returns the current onboarding/payout status of the driver's
+// connected account, syncing payoutsEnabled/chargesEnabled to Firestore.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.connectAccountStatus = onRequest((req, res) => {
+    compressResponse(req, res, () => {
+        corsHandler(req, res, async () => {
+            setSecurityHeaders(res);
+            if (req.method === 'OPTIONS') return res.sendStatus(204);
+            if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+            const decoded = await verifyAuth(req);
+            if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+            const driverRef  = db.collection('drivers').doc(decoded.uid);
+            const driverSnap = await driverRef.get();
+            if (!driverSnap.exists) return res.status(404).json({ error: 'Driver profile not found.' });
+
+            const driver = driverSnap.data();
+            if (!driver.stripeAccountId) return res.json({ connected: false });
+
+            try {
+                const account = await getStripe().accounts.retrieve(driver.stripeAccountId);
+                const status = {
+                    connected:       true,
+                    chargesEnabled:  !!account.charges_enabled,
+                    payoutsEnabled:  !!account.payouts_enabled,
+                    detailsSubmitted: !!account.details_submitted,
+                };
+                await driverRef.update({
+                    payoutsEnabled: status.payoutsEnabled,
+                    chargesEnabled: status.chargesEnabled,
+                });
+                return res.json(status);
+            } catch (err) {
+                logger.error('connectAccountStatus failed', { driverId: decoded.uid, message: err?.message });
+                return res.status(500).json({ error: 'Could not check payout status.' });
+            }
+        });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /completeRide
+// Driver-only. Server-side ride completion: computes the 80/20 split from the
+// ride's stored price (never trusts a client-supplied amount), transfers the
+// driver's 80% to their connected Stripe account when payouts are enabled, and
+// atomically updates the ride + driver totals via the Admin SDK. This replaces
+// the old client-side Firestore transaction that let a driver self-report
+// their own earnings.
+// Body: { rideId }
+// ─────────────────────────────────────────────────────────────────────────────
+exports.completeRide = onRequest((req, res) => {
+    compressResponse(req, res, () => {
+        corsHandler(req, res, async () => {
+            setSecurityHeaders(res);
+            if (req.method === 'OPTIONS') return res.sendStatus(204);
+            if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+            const decoded = await verifyAuth(req);
+            if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+            const rideId = sanitiseString(req.body?.rideId || '');
+            if (!FIRESTORE_ID_RE.test(rideId)) return res.status(400).json({ error: 'Invalid ride reference.' });
+
+            const rideRef  = db.collection('rides').doc(rideId);
+            const rideSnap = await rideRef.get();
+            if (!rideSnap.exists) return res.status(404).json({ error: 'Ride not found.' });
+
+            const ride = rideSnap.data();
+            if (ride.driverId !== decoded.uid)      return res.status(403).json({ error: 'Forbidden' });
+            if (ride.status !== 'in_progress')      return res.status(409).json({ error: 'Ride is not in progress.' });
+            if (ride.paymentStatus !== 'paid')       return res.status(402).json({ error: 'Ride has not been paid for yet.' });
+
+            const amountPence       = Math.round(parseFloat(ride.price) * 100);
+            const driverSharePence  = Math.round(amountPence * 0.8);
+            const platformFeePence  = amountPence - driverSharePence;
+            const driverEarnings    = driverSharePence / 100;
+            const platformFee       = platformFeePence / 100;
+
+            const driverRef  = db.collection('drivers').doc(decoded.uid);
+            const driverSnap = await driverRef.get();
+            const driver     = driverSnap.exists ? driverSnap.data() : {};
+
+            let transferId = null;
+            let transferred = false;
+
+            // Only attempt a real payout once the driver has completed Stripe
+            // Connect onboarding. Otherwise the ride still completes — earnings
+            // are recorded — but the payout is deferred until they finish setup.
+            if (driver.stripeAccountId && driver.payoutsEnabled) {
+                try {
+                    const transfer = await getStripe().transfers.create({
+                        amount: driverSharePence,
+                        currency: 'gbp',
+                        destination: driver.stripeAccountId,
+                        metadata: { rideId, driverId: decoded.uid },
+                    });
+                    transferId = transfer.id;
+                    transferred = true;
+                } catch (err) {
+                    logger.error('Driver transfer failed', { rideId, driverId: decoded.uid, message: err?.message });
+                    // Don't block ride completion on a payout failure — earnings are
+                    // still recorded and can be reconciled/retried manually.
+                }
+            }
+
+            try {
+                await db.runTransaction(async (tx) => {
+                    tx.update(rideRef, {
+                        status:          'completed',
+                        completedAt:     admin.firestore.FieldValue.serverTimestamp(),
+                        driverEarnings,
+                        platformFee,
+                        transferId,
+                        payoutStatus:    transferred ? 'paid' : 'pending_connect_setup',
+                    });
+                    tx.update(driverRef, {
+                        earnings:      admin.firestore.FieldValue.increment(driverEarnings),
+                        todayEarnings: admin.firestore.FieldValue.increment(driverEarnings),
+                        weekEarnings:  admin.firestore.FieldValue.increment(driverEarnings),
+                        totalRides:    admin.firestore.FieldValue.increment(1),
+                    });
+                });
+            } catch (err) {
+                logger.error('completeRide Firestore update failed', { rideId, message: err?.message });
+                return res.status(500).json({ error: 'Ride payment succeeded but completion failed. Contact support.' });
+            }
+
+            return res.json({ success: true, driverEarnings, platformFee, transferred });
+        });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /stripeWebhook
 // ─────────────────────────────────────────────────────────────────────────────
 exports.stripeWebhook = onRequest((req, res) => {
