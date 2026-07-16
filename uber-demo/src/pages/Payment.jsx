@@ -4,6 +4,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
+import { DRIVER_SHARE, PLATFORM_SHARE } from '../constants/fees';
 
 // Loaded once at module level — never recreated on re-renders
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
@@ -339,11 +340,11 @@ function PaymentForm({ price, rideDetails }) {
                 <div className="space-y-2 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">{rideDetails?.rideType || 'Economy'} ride</span>
-                    <span>£{(price * 0.85).toFixed(2)}</span>
+                    <span>£{(price * DRIVER_SHARE).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Service fee (15%)</span>
-                    <span>£{(price * 0.15).toFixed(2)}</span>
+                    <span className="text-gray-500">Service fee ({PLATFORM_SHARE * 100}%)</span>
+                    <span>£{(price * PLATFORM_SHARE).toFixed(2)}</span>
                   </div>
                 </div>
                 <div className="border-t border-gray-800 pt-3 flex justify-between items-center">

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
+import { DRIVER_SHARE, PLATFORM_SHARE } from '../../constants/fees';
 
 const ring = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
 
@@ -154,7 +155,7 @@ function useAdminStats() {
       const ridesToday   = rides.length;
       const revenueToday = rides
         .filter(r => r.status === 'completed')
-        .reduce((sum, r) => sum + parseFloat(r.price || 0) * 0.2, 0);
+        .reduce((sum, r) => sum + parseFloat(r.price || 0) * PLATFORM_SHARE, 0);
       setStats(s => ({ ...s, ridesToday, revenueToday }));
     });
 
@@ -272,11 +273,11 @@ function OverviewSection({ onNavigate }) {
         <p className="text-yellow-400 font-bold mb-2">Revenue Split</p>
         <div className="flex gap-6">
           <div>
-            <p className="text-white font-black text-xl">80%</p>
+            <p className="text-white font-black text-xl">{DRIVER_SHARE * 100}%</p>
             <p className="text-gray-400 text-xs">Driver share</p>
           </div>
           <div>
-            <p className="text-white font-black text-xl">20%</p>
+            <p className="text-white font-black text-xl">{PLATFORM_SHARE * 100}%</p>
             <p className="text-gray-400 text-xs">Platform (Amit)</p>
           </div>
         </div>

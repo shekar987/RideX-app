@@ -16,6 +16,7 @@ import {
   getDocs, startAfter,
 } from 'firebase/firestore';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
+import { DRIVER_SHARE, PLATFORM_SHARE } from '../../constants/fees';
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -334,7 +335,7 @@ function ReceiptModal({ ride, onClose }) {
             <span className="text-white font-semibold">£{parseFloat(ride.price || 0).toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Platform fee (20%)</span>
+            <span className="text-gray-400">Platform fee ({PLATFORM_SHARE * 100}%)</span>
             <span className="text-red-400 font-semibold">-£{parseFloat(ride.platformFee || 0).toFixed(2)}</span>
           </div>
           <div className="border-t border-gray-800 pt-2 flex justify-between">
@@ -480,7 +481,7 @@ function RidesTab({
               <div className="text-right">
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest">Your earnings</p>
                 <p className="text-yellow-400 font-black text-base">
-                  £{(parseFloat(popupRide.price || 0) * 0.8).toFixed(2)}
+                  £{(parseFloat(popupRide.price || 0) * DRIVER_SHARE).toFixed(2)}
                 </p>
               </div>
             </div>
@@ -595,13 +596,13 @@ function RidesTab({
                 <span className="text-white font-semibold">£{parseFloat(activeRide.price || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Platform fee (20%)</span>
-                <span className="text-gray-500">-£{(parseFloat(activeRide.price || 0) * 0.2).toFixed(2)}</span>
+                <span className="text-gray-400">Platform fee ({PLATFORM_SHARE * 100}%)</span>
+                <span className="text-gray-500">-£{(parseFloat(activeRide.price || 0) * PLATFORM_SHARE).toFixed(2)}</span>
               </div>
               <div className="border-t border-gray-800 pt-2.5 flex justify-between items-baseline">
-                <span className="text-white font-bold text-sm">Your earnings (80%)</span>
+                <span className="text-white font-bold text-sm">Your earnings ({DRIVER_SHARE * 100}%)</span>
                 <span className="text-yellow-400 font-black text-2xl">
-                  £{(parseFloat(activeRide.price || 0) * 0.8).toFixed(2)}
+                  £{(parseFloat(activeRide.price || 0) * DRIVER_SHARE).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -753,7 +754,7 @@ function RidesTab({
                     <div className="text-right">
                       <p className="text-[10px] text-gray-500 uppercase tracking-widest">Your earnings</p>
                       <p className="text-yellow-400 font-black text-base">
-                        £{(parseFloat(ride.price || 0) * 0.8).toFixed(2)}
+                        £{(parseFloat(ride.price || 0) * DRIVER_SHARE).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -1073,7 +1074,7 @@ function PayoutSetupCard({ showToast }) {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-sm shadow-black/40">
-      <SectionHeader title="Payouts" subtitle="Powered by Stripe Connect — your 80% share is paid out automatically" />
+      <SectionHeader title="Payouts" subtitle={`Powered by Stripe Connect — your ${DRIVER_SHARE * 100}% share is paid out automatically`} />
 
       {status === null ? (
         <SkeletonLine className="h-10 w-full" />
