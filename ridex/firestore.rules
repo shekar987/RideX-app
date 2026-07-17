@@ -1,0 +1,184 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RideX — Production Firestore Security Rules
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// RIDES (/rides/{rideId})
+//   create — signed-in user only, must own the ride (userId == auth.uid),
+//            must start as status 'confirmed' with driverId null, and must
+//            not pre-set any Cloud-Function-only money field.
+//   read   — the customer who booked it, OR the assigned driver, OR any
+//            APPROVED driver while the ride is still unassigned/'confirmed'
+//            (powers the available-rides list).
+//   update (driver accept)   — approved driver takes an unassigned ride:
+//            driverId null → auth.uid, status → 'driver_assigned';
+//            price/userId must be byte-identical to before.
+//   update (driver progress) — assigned driver only, strictly
+//            'driver_assigned' → 'arrived' → 'in_progress'. NEVER to
+//            'completed': completion pays the driver, so it happens only in
+//            the completeRide Cloud Function (Admin SDK bypasses rules).
+//   update (customer cancel) — ride owner sets status 'confirmed' →
+//            'cancelled' only; price/driverId/userId untouched.
+//   money fields — paymentStatus, driverEarnings, platformFee, transferId,
+//            payoutStatus (and paymentIntentId) are Cloud-Function-only.
+//            Every update path rejects any change to them.
+//   delete — nobody, ever.
+//
+// DRIVERS (/drivers/{driverId})
+//   create — only the user creating their OWN doc, and it must be born with
+//            status 'pending' — nobody self-approves at registration. Only
+//            the setDriverStatus Cloud Function (admin-only) flips status.
+//   read   — a driver can read their own doc only.
+//            LIMITATION: customers tracking their assigned driver's live GPS
+//            (RideStatus.jsx) cannot be expressed safely here — Firestore
+//            rules cannot grant field-level reads, and a cross-document
+//            check ("is this driver on one of my active rides?") cannot be
+//            evaluated from the driver doc side without knowing the rideId.
+//            Handled in a later task by mirroring driverLat/driverLng into
+//            the ride document (which the customer CAN read).
+//   update — a driver may change ONLY: name, phone, city, isOnline,
+//            currentLat, currentLng, lastSeen (enforced via
+//            diff().affectedKeys().hasOnly). Everything else — status,
+//            rating, earnings/todayEarnings/weekEarnings, totalRides,
+//            stripeAccountId, payoutsEnabled, chargesEnabled, vehicle*,
+//            licenceNumber — is server-controlled and locked.
+//   delete — nobody, ever.
+//
+// _RATELIMITS and _HEALTH — internal Cloud Function state. No client access;
+//   Functions use the Admin SDK which bypasses these rules.
+//
+// DEFAULT — everything not explicitly allowed above is denied.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Signed-in check shared by every rule below
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // True when the requester has a driver profile that an admin has approved
+    function isApprovedDriver(uid) {
+      return exists(/databases/$(database)/documents/drivers/$(uid))
+        && get(/databases/$(database)/documents/drivers/$(uid)).data.status == 'approved';
+    }
+
+    // True when the update does not touch any money/payout field. These are
+    // written exclusively by Cloud Functions (Admin SDK) after real Stripe
+    // charges/transfers succeed — a client changing them is always an attack.
+    function moneyFieldsUntouched() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+        ['paymentStatus', 'driverEarnings', 'platformFee', 'transferId',
+         'payoutStatus', 'paymentIntentId']
+      );
+    }
+
+    // ── Rides ────────────────────────────────────────────────────────────
+    match /rides/{rideId} {
+
+      // Read: ride owner, assigned driver, or any approved driver while the
+      // ride is still open on the marketplace ('confirmed' == unassigned).
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || resource.data.driverId == request.auth.uid
+        || (resource.data.status == 'confirmed' && isApprovedDriver(request.auth.uid))
+      );
+
+      // Create: customer books their own ride. Must start unassigned and
+      // 'confirmed', with a real positive price, and no money fields pre-set.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'confirmed'
+        && request.resource.data.driverId == null
+        && request.resource.data.price is number
+        && request.resource.data.price > 0
+        && !request.resource.data.keys().hasAny(
+             ['paymentStatus', 'driverEarnings', 'platformFee', 'transferId',
+              'payoutStatus', 'paymentIntentId']);
+
+      // Update — driver accepts an unassigned ride. Approved drivers only;
+      // driverId flips null → their uid, status → 'driver_assigned'.
+      // price and userId must be exactly unchanged.
+      allow update: if isSignedIn()
+        && isApprovedDriver(request.auth.uid)
+        && resource.data.status == 'confirmed'
+        && resource.data.driverId == null
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.status == 'driver_assigned'
+        && request.resource.data.price == resource.data.price
+        && request.resource.data.userId == resource.data.userId
+        && moneyFieldsUntouched();
+
+      // Update — assigned driver progresses the ride. Only the two legal
+      // transitions; 'completed' is deliberately absent (completeRide
+      // Cloud Function only — it moves money).
+      allow update: if isSignedIn()
+        && resource.data.driverId == request.auth.uid
+        && (
+          (resource.data.status == 'driver_assigned' && request.resource.data.status == 'arrived')
+          || (resource.data.status == 'arrived' && request.resource.data.status == 'in_progress')
+        )
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.price == resource.data.price
+        && request.resource.data.userId == resource.data.userId
+        && moneyFieldsUntouched();
+
+      // Update — customer cancels their own still-unaccepted ride.
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.status == 'confirmed'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.price == resource.data.price
+        && moneyFieldsUntouched();
+
+      // Delete: nobody. Rides are the financial audit trail.
+      allow delete: if false;
+    }
+
+    // ── Drivers ──────────────────────────────────────────────────────────
+    match /drivers/{driverId} {
+
+      // Create: only your own doc, and only as a 'pending' applicant.
+      // Approval happens exclusively via the setDriverStatus Cloud Function.
+      allow create: if isSignedIn()
+        && request.auth.uid == driverId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      // Read: own document only. (Customer→driver GPS reads are NOT allowed —
+      // see LIMITATION note in the header; will be solved by mirroring the
+      // driver's location into the ride document.)
+      allow read: if isSignedIn() && request.auth.uid == driverId;
+
+      // Update: own doc, and ONLY the whitelisted mutable profile/presence
+      // fields. status, rating, all earnings counters, totalRides, Stripe
+      // Connect fields, vehicle details and licence number are locked —
+      // they change only via Cloud Functions (Admin SDK).
+      allow update: if isSignedIn()
+        && request.auth.uid == driverId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['name', 'phone', 'city', 'isOnline',
+              'currentLat', 'currentLng', 'lastSeen']);
+
+      // Delete: nobody.
+      allow delete: if false;
+    }
+
+    // ── Internal Cloud Function state — no client access ─────────────────
+    match /_ratelimits/{doc} {
+      allow read, write: if false;
+    }
+    match /_health/{doc} {
+      allow read, write: if false;
+    }
+
+    // ── Default: deny everything not explicitly allowed above ────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

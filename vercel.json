@@ -1,5 +1,6 @@
 {
-  "buildCommand": "cd uber-demo && npm install && CI=false npm run build",
-  "outputDirectory": "uber-demo/build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd ridex && npm install && CI=false npm run build",
+  "outputDirectory": "ridex/build",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
