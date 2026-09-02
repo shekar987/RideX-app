@@ -10,11 +10,13 @@
     <meta name="color-scheme" content="dark" />
     <meta name="description" content="RideX — book a ride in seconds, track your driver in real time." />
 
-    <!-- Installed-app (PWA) behaviour: full screen with a translucent status bar so
-         env(safe-area-inset-*) resolves on iOS. Without these the insets are all 0. -->
+    <!-- Installed-app (PWA) behaviour. The status bar is opaque black (matches the
+         app background) so page content starts BELOW it on iPhone; only the bottom
+         home-indicator inset applies, which every page already pads with pb-safe.
+         Do not switch to black-translucent unless every page header gets pt-safe. -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="RideX" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
