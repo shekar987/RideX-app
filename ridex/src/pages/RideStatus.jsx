@@ -173,8 +173,14 @@ function Shell({ user, onLogout, children }) {
           </div>
           <span className="text-lg font-black">RideX</span>
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-3">
           <p className="text-gray-400 text-sm hidden md:block truncate max-w-[200px]">{user?.displayName || user?.email}</p>
+          <Link
+            to="/history"
+            className={`text-sm text-gray-400 hover:text-white transition border border-gray-800 px-4 py-2.5 sm:py-1.5 rounded-full ${ring}`}
+          >
+            My Rides
+          </Link>
           <button
             type="button"
             onClick={onLogout}
