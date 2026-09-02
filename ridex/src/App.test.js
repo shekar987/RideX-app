@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // ── Firebase mocks ─────────────────────────────────────────────────────────────
@@ -70,7 +70,25 @@ jest.mock('firebase/firestore', () => ({
     runTransaction:  (...a) => mockRunTx(...a),
     serverTimestamp: jest.fn(() => ({ _type: 'serverTimestamp' })),
     increment:       jest.fn(n => n),
+    orderBy:         jest.fn(),
+    limit:           jest.fn(),
+    startAfter:      jest.fn(),
+    setDoc:          jest.fn(async () => {}),
+    getDoc:          jest.fn(async () => ({ exists: () => false, data: () => undefined })),
+    getCountFromServer: jest.fn(async () => ({ data: () => ({ count: 0 }) })),
+    Timestamp:       { fromMillis: jest.fn(ms => ({ toMillis: () => ms })) },
 }));
+
+// ── Firebase Messaging (useNotifications) ─────────────────────────────────────
+jest.mock('firebase/messaging', () => ({
+    getMessaging: jest.fn(() => ({})),
+    getToken:     jest.fn(async () => 'fcm-token'),
+    onMessage:    jest.fn(() => () => {}),
+    isSupported:  jest.fn(async () => false),
+}));
+
+// ── fetch (Cloud Function calls) — a bare jest.fn() would make res.json() throw
+global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}) }));
 
 // ── Stripe ────────────────────────────────────────────────────────────────────
 jest.mock('@stripe/react-stripe-js', () => ({
@@ -132,12 +150,15 @@ beforeEach(() => {
 describe('Routing', () => {
     test('landing page renders the RideX brand', async () => {
         renderAt('/');
-        expect((await screen.findAllByText('RideX')).length).toBeGreaterThan(0);
-    });
+        // First test in the file pays the one-off cost of transpiling the lazy
+        // landing chunk, which can exceed the default 1 s on a cold machine.
+        expect((await screen.findAllByText('RideX', {}, { timeout: 8000 })).length).toBeGreaterThan(0);
+    }, 15000);
 
-    test('unknown route redirects to landing page', async () => {
+    test('unknown route renders the 404 page', async () => {
         renderAt('/this-does-not-exist');
-        expect((await screen.findAllByText('RideX')).length).toBeGreaterThan(0);
+        expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /go home/i })).toBeInTheDocument();
     });
 
     test('unauthenticated /book redirects to login', async () => {
@@ -155,6 +176,11 @@ describe('Routing', () => {
         expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
     });
 
+    test('unauthenticated /status/:rideId redirects to login', async () => {
+        renderAt('/status/abc123');
+        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    });
+
     test('unauthenticated /history redirects to login', async () => {
         renderAt('/history');
         expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
@@ -162,7 +188,7 @@ describe('Routing', () => {
 
     test('/driver/login renders driver login page', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: /driver login/i })).toBeInTheDocument();
     });
 
     test('/login renders the login page', async () => {
@@ -183,8 +209,8 @@ describe('Routing', () => {
 describe('Login page', () => {
     test('renders email and password fields', async () => {
         renderAt('/login');
-        expect(await screen.findByPlaceholderText(/enter your email/i)).toBeInTheDocument();
-        expect(screen.getByPlaceholderText(/enter your password/i)).toBeInTheDocument();
+        expect(await screen.findByPlaceholderText(/your@email\.com/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/your password/i)).toBeInTheDocument();
     });
 
     test('shows register link', async () => {
@@ -195,7 +221,7 @@ describe('Login page', () => {
 
     test('renders login heading', async () => {
         renderAt('/login?role=customer');
-        expect(await screen.findByText(/log in to your account/i)).toBeInTheDocument();
+        expect(await screen.findByText(/log in to your ridex account/i)).toBeInTheDocument();
     });
 
     test('shows validation error when fields are empty', async () => {
@@ -212,8 +238,8 @@ describe('Login page', () => {
         });
         mockReload.mockResolvedValueOnce();
         renderAt('/login');
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: '  a@b.com  ' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'Password1!' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: '  a@b.com  ' } });
+        fireEvent.change(screen.getByPlaceholderText(/your password/i), { target: { value: 'Password1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /log in/i }));
         });
@@ -223,8 +249,8 @@ describe('Login page', () => {
     test('shows invalid credential error', async () => {
         mockSignIn.mockRejectedValueOnce({ code: 'auth/invalid-credential' });
         renderAt('/login');
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your password/i), { target: { value: 'WrongPass1!' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your password/i), { target: { value: 'WrongPass1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /log in/i }));
         });
@@ -237,8 +263,8 @@ describe('Login page', () => {
         mockSignIn.mockRejectedValue({ code: 'auth/wrong-password' });
 
         renderAt('/login');
-        const emailInput = screen.getByPlaceholderText(/enter your email/i);
-        const passInput  = screen.getByPlaceholderText(/enter your password/i);
+        const emailInput = screen.getByPlaceholderText(/your@email\.com/i);
+        const passInput  = screen.getByPlaceholderText(/your password/i);
         fireEvent.change(emailInput, { target: { value: 'lockout@test.com' } });
         fireEvent.change(passInput,  { target: { value: 'bad' } });
 
@@ -255,7 +281,7 @@ describe('Login page', () => {
     test('forgot password sends reset email', async () => {
         mockSendPasswordReset.mockResolvedValueOnce();
         renderAt('/login');
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /forgot password/i }));
         });
@@ -279,7 +305,7 @@ describe('Register page', () => {
     test('renders all fields', async () => {
         renderAt('/register');
         expect(await screen.findByPlaceholderText(/full name/i)).toBeInTheDocument();
-        expect(screen.getByPlaceholderText(/enter your email/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/your@email\.com/i)).toBeInTheDocument();
         expect(screen.getByPlaceholderText(/min\. 8 characters/i)).toBeInTheDocument();
     });
 
@@ -291,13 +317,13 @@ describe('Register page', () => {
 
     test('shows register tagline', async () => {
         renderAt('/register');
-        expect(await screen.findByText(/join ridex today/i)).toBeInTheDocument();
+        expect(await screen.findByText(/join ridex/i)).toBeInTheDocument();
     });
 
     test('shows error when name is too short', async () => {
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'A' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -308,7 +334,7 @@ describe('Register page', () => {
     test('shows error for invalid characters in name', async () => {
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice123' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -319,7 +345,7 @@ describe('Register page', () => {
     test('shows error for weak password (too short)', async () => {
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'short' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -330,7 +356,7 @@ describe('Register page', () => {
     test('shows error for password with no digit or symbol', async () => {
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'OnlyLetters' } });
         // The form has a submit button with exact text "Create Account"
         const submitBtn = (await screen.findAllByRole('button')).find(b => b.textContent === 'Create Account');
@@ -353,12 +379,12 @@ describe('Register page', () => {
         mockCreateUser.mockRejectedValueOnce({ code: 'auth/email-already-in-use' });
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice Smith' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'a@b.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'a@b.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /create account/i }));
         });
-        expect(screen.getByText(/email already in use/i)).toBeInTheDocument();
+        expect(screen.getByText(/already exists/i)).toBeInTheDocument();
     });
 
     test('shows verification email screen on success', async () => {
@@ -367,7 +393,7 @@ describe('Register page', () => {
         mockUpdateProfile.mockResolvedValueOnce();
         renderAt('/register');
         fireEvent.change(await screen.findByPlaceholderText(/full name/i), { target: { value: 'Alice Smith' } });
-        fireEvent.change(screen.getByPlaceholderText(/enter your email/i), { target: { value: 'alice@test.com' } });
+        fireEvent.change(screen.getByPlaceholderText(/your@email\.com/i), { target: { value: 'alice@test.com' } });
         fireEvent.change(screen.getByPlaceholderText(/min\. 8 characters/i), { target: { value: 'Password1!' } });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -380,62 +406,72 @@ describe('Register page', () => {
 // SECTION 4 — Driver Login page
 // ═════════════════════════════════════════════════════════════════════════════
 describe('Driver Login page', () => {
+    // The register panel is always mounted (hidden) — scope queries to the visible tabpanel
+    async function openRegister() {
+        await screen.findByRole('heading', { name: /driver login/i });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('tab', { name: /register/i }));
+        });
+        return screen.getByRole('tabpanel');
+    }
+
+    function fillRegister(panel, overrides = {}) {
+        const v = { name: 'Test Driver', email: 'd@test.com', password: 'Password1!', confirm: 'Password1!', ...overrides };
+        fireEvent.change(within(panel).getByPlaceholderText(/john smith/i),          { target: { value: v.name } });
+        fireEvent.change(within(panel).getByPlaceholderText(/driver@example\.com/i), { target: { value: v.email } });
+        fireEvent.change(within(panel).getByPlaceholderText(/min\. 6 characters/i),  { target: { value: v.password } });
+        fireEvent.change(within(panel).getByPlaceholderText(/••••••••/),             { target: { value: v.confirm } });
+        fireEvent.change(within(panel).getByPlaceholderText(/\+44 7700 900000/i),    { target: { value: '+441234567890' } });
+        fireEvent.change(within(panel).getByPlaceholderText(/^London$/i),            { target: { value: 'London' } });
+        fireEvent.change(within(panel).getByPlaceholderText(/toyota camry/i),        { target: { value: 'Toyota Camry' } });
+        fireEvent.change(within(panel).getByPlaceholderText(/AB12 CDE/i),            { target: { value: 'AB12 CDE' } });
+        fireEvent.change(within(panel).getByPlaceholderText(/SMITH901157AB9IJ/i),    { target: { value: 'LIC123456' } });
+        fireEvent.click(within(panel).getByLabelText(/i agree to the/i));
+    }
+
     test('renders driver login heading', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: /driver login/i })).toBeInTheDocument();
     });
 
-    test('shows Sign In and Register tabs', async () => {
+    test('shows Login and Register tabs', async () => {
         renderAt('/driver/login');
-        // The tab switcher uses buttons with exact text
-        const buttons = await screen.findAllByRole('button');
-        const labels = buttons.map(b => b.textContent);
-        expect(labels.some(l => /sign in/i.test(l))).toBe(true);
-        expect(labels.some(l => /register/i.test(l))).toBe(true);
+        expect(await screen.findByRole('tab', { name: /login/i })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /register/i })).toBeInTheDocument();
     });
 
-    test('shows role tabs — Customer and Driver', async () => {
+    test('shows portal selector — Customer and Driver', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText('Customer')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /driver/i })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /customer/i })).toBeInTheDocument();
+        expect(screen.getByText('Driver')).toBeInTheDocument();
     });
 
-    test('shows "Signing in as Driver" badge', async () => {
+    test('shows the driver sign-in tagline', async () => {
         renderAt('/driver/login');
-        expect(await screen.findByText(/signing in as driver/i)).toBeInTheDocument();
+        expect(await screen.findByText(/sign in to your driver account/i)).toBeInTheDocument();
     });
 
     test('Register tab shows all required fields', async () => {
         renderAt('/driver/login');
-        await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /register/i }));
-        });
-        expect(await screen.findByPlaceholderText(/james wilson/i)).toBeInTheDocument();
-        expect(screen.getByPlaceholderText(/\+44 7700 900000/i)).toBeInTheDocument();
-        expect(screen.getByPlaceholderText(/AB12 CDE/i)).toBeInTheDocument();
+        const panel = await openRegister();
+        expect(within(panel).getByPlaceholderText(/john smith/i)).toBeInTheDocument();
+        expect(within(panel).getByPlaceholderText(/\+44 7700 900000/i)).toBeInTheDocument();
+        expect(within(panel).getByPlaceholderText(/AB12 CDE/i)).toBeInTheDocument();
     });
 
     test('Register tab shows vehicle type dropdown', async () => {
         renderAt('/driver/login');
-        await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /register/i }));
-        });
-        const select = await screen.findByDisplayValue('Sedan');
-        expect(select).toBeInTheDocument();
+        const panel = await openRegister();
+        const select = within(panel).getByDisplayValue('Sedan');
         expect(select).toHaveValue('Sedan');
     });
 
     test('shows password length error on short password', async () => {
         renderAt('/driver/login');
+        const panel = await openRegister();
+        fillRegister(panel, { password: '123', confirm: '123' });
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /register/i }));
-        });
-        fireEvent.change((await screen.findAllByPlaceholderText(/••••••••/i))[0], { target: { value: '123' } });
-        fireEvent.change(screen.getByPlaceholderText(/james wilson/i), { target: { value: 'Test Driver' } });
-        fireEvent.change(screen.getByPlaceholderText(/you@example\.com/i), { target: { value: 'd@test.com' } });
-        fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
-        await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /create driver account/i }));
+            fireEvent.click(within(panel).getByRole('button', { name: /create account/i }));
         });
         expect(await screen.findByText(/password must be at least 6/i)).toBeInTheDocument();
     });
@@ -443,28 +479,12 @@ describe('Driver Login page', () => {
     test('shows email-already-in-use error', async () => {
         mockCreateUser.mockRejectedValueOnce({ code: 'auth/email-already-in-use' });
         renderAt('/driver/login');
-
-        // Switch to Register tab
-        const allButtons = await screen.findAllByRole('button');
-        const registerTab = allButtons.find(b => b.textContent === 'Register');
-        await act(async () => { fireEvent.click(registerTab); });
-
-        fireEvent.change(await screen.findByPlaceholderText(/james wilson/i), { target: { value: 'Test Driver' } });
-        fireEvent.change(screen.getByPlaceholderText(/you@example\.com/i), { target: { value: 'existing@test.com' } });
-        const passwordFields = screen.getAllByPlaceholderText(/••••••••/i);
-        fireEvent.change(passwordFields[0], { target: { value: 'Password1!' } });
-        fireEvent.change(passwordFields[1], { target: { value: 'Password1!' } });
-        fireEvent.change(screen.getByPlaceholderText(/\+44 7700 900000/i), { target: { value: '+441234567890' } });
-        fireEvent.change(screen.getByPlaceholderText(/London/i), { target: { value: 'London' } });
-        fireEvent.change(screen.getByPlaceholderText(/Toyota Camry/i), { target: { value: 'Toyota Camry' } });
-        fireEvent.change(screen.getByPlaceholderText(/AB12 CDE/i), { target: { value: 'AB12CDE' } });
-        fireEvent.change(screen.getByPlaceholderText(/SMITH901157AB9CD/i), { target: { value: 'LIC123456' } });
-        fireEvent.click(screen.getByLabelText(/i agree to the/i));
+        const panel = await openRegister();
+        fillRegister(panel, { email: 'existing@test.com' });
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /create driver account/i }));
+            fireEvent.click(within(panel).getByRole('button', { name: /create account/i }));
         });
-        // mapAuthError maps 'auth/email-already-in-use' → 'An account with this email already exists.'
-        expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
+        expect(await screen.findByText(/already registered/i)).toBeInTheDocument();
     });
 });
 
@@ -474,12 +494,12 @@ describe('Driver Login page', () => {
 describe('Landing page', () => {
     test('renders I\'m a Customer button', async () => {
         renderAt('/');
-        expect(await screen.findByText(/i'm a customer/i)).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /book a ride/i })).toBeInTheDocument();
     });
 
     test('renders I\'m a Driver button', async () => {
         renderAt('/');
-        expect(await screen.findByText(/i'm a driver/i)).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /become a driver/i })).toBeInTheDocument();
     });
 
     test('renders safety and booking feature cards', async () => {
@@ -490,7 +510,8 @@ describe('Landing page', () => {
 
     test('renders stats section', async () => {
         renderAt('/');
-        expect(await screen.findByText(/rides completed/i)).toBeInTheDocument();
+        // "Rides completed" appears in the stats strip AND the driver-portal preview card
+        expect((await screen.findAllByText(/rides completed/i)).length).toBeGreaterThan(0);
         expect(screen.getByText(/average rating/i)).toBeInTheDocument();
     });
 });

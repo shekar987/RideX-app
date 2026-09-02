@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────
-// Empty state component — icon, message, optional hint
+// Empty state component — icon, message, optional hint / CTA
 // ─────────────────────────────────────────────
 export default function EmptyState({ icon, title, body, hint, cta, onCta }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 flex flex-col items-center text-center gap-3">
-      <div className="w-14 h-14 bg-gray-800 rounded-full flex items-center justify-center text-gray-600">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 sm:p-8 flex flex-col items-center text-center gap-3">
+      <div className="w-14 h-14 bg-gray-800 rounded-full flex items-center justify-center text-gray-600" aria-hidden="true">
         {icon}
       </div>
       <div>
@@ -18,8 +18,9 @@ export default function EmptyState({ icon, title, body, hint, cta, onCta }) {
       )}
       {cta && (
         <button
+          type="button"
           onClick={onCta}
-          className="mt-1 px-5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold rounded-xl transition"
+          className="mt-1 px-5 py-3 min-h-[44px] bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-semibold rounded-xl transition"
         >
           {cta}
         </button>

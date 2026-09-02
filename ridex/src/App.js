@@ -1,24 +1,29 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import DriverRoute from './components/DriverRoute';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import { lazyRetry } from './utils/lazyRetry';
 
 // ── Code-split every route ────────────────────────────────────────────────────
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const Login       = lazy(() => import('./pages/Login'));
-const Register    = lazy(() => import('./pages/Register'));
-const BookRide    = lazy(() => import('./pages/BookRide'));
-const Payment     = lazy(() => import('./pages/Payment'));
-const RideStatus  = lazy(() => import('./pages/RideStatus'));
-const RideHistory = lazy(() => import('./pages/RideHistory'));
-// Import driver pages
-const DriverLogin     = lazy(() => import('./pages/driver/DriverLogin'));
-const DriverDashboard = lazy(() => import('./pages/driver/DriverDashboard'));
-// Import admin pages
-const AdminLogin     = lazy(() => import('./pages/admin/AdminLogin'));
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+// lazyRetry() retries a failed chunk load once and then reloads the page once —
+// after a deploy, phones with the old index.html open would otherwise crash.
+const LandingPage = lazy(lazyRetry(() => import('./pages/LandingPage')));
+const Login       = lazy(lazyRetry(() => import('./pages/Login')));
+const Register    = lazy(lazyRetry(() => import('./pages/Register')));
+const BookRide    = lazy(lazyRetry(() => import('./pages/BookRide')));
+const Payment     = lazy(lazyRetry(() => import('./pages/Payment')));
+const RideStatus  = lazy(lazyRetry(() => import('./pages/RideStatus')));
+const RideHistory = lazy(lazyRetry(() => import('./pages/RideHistory')));
+const Legal       = lazy(lazyRetry(() => import('./pages/Legal')));
+const NotFound    = lazy(lazyRetry(() => import('./pages/NotFound')));
+// Driver pages
+const DriverLogin     = lazy(lazyRetry(() => import('./pages/driver/DriverLogin')));
+const DriverDashboard = lazy(lazyRetry(() => import('./pages/driver/DriverDashboard')));
+// Admin pages
+const AdminLogin     = lazy(lazyRetry(() => import('./pages/admin/AdminLogin')));
+const AdminDashboard = lazy(lazyRetry(() => import('./pages/admin/AdminDashboard')));
 
 // ── Page-level loading skeleton ───────────────────────────────────────────────
 // Shown while a route chunk is downloading (typically < 200 ms on broadband,
@@ -26,7 +31,7 @@ const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 function PageLoader() {
     return (
         <div
-            className="min-h-screen bg-black flex items-center justify-center"
+            className="min-h-screen min-h-dvh bg-black flex items-center justify-center"
             aria-label="Loading page"
             role="status"
         >
@@ -44,26 +49,39 @@ function PageLoader() {
     );
 }
 
+// ── Per-route error boundary ──────────────────────────────────────────────────
+// Keyed on the pathname so a render crash on one page is reset by navigating
+// away, instead of blanking the whole app until a hard reload.
+function RouteErrorBoundary({ children }) {
+    const { pathname } = useLocation();
+    return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>;
+}
+
 // AppRoutes is exported so tests can wrap it in MemoryRouter
 // without nesting inside BrowserRouter.
 export function AppRoutes() {
     return (
-        <Suspense fallback={<PageLoader />}>
-            <Routes>
-                <Route path="/"         element={<LandingPage />} />
-                <Route path="/login"    element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/book"     element={<ProtectedRoute><BookRide /></ProtectedRoute>} />
-                <Route path="/payment"  element={<ProtectedRoute><Payment /></ProtectedRoute>} />
-                <Route path="/status"   element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
-                <Route path="/history"      element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
-                <Route path="/driver/login"      element={<DriverLogin />} />
-                <Route path="/driver/dashboard" element={<DriverRoute><DriverDashboard /></DriverRoute>} />
-                <Route path="/admin/login"      element={<AdminLogin />} />
-                <Route path="/admin/dashboard"  element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-                <Route path="*"                 element={<Navigate to="/" replace />} />
-            </Routes>
-        </Suspense>
+        <RouteErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+                <Routes>
+                    <Route path="/"                 element={<LandingPage />} />
+                    <Route path="/login"            element={<Login />} />
+                    <Route path="/register"         element={<Register />} />
+                    <Route path="/book"             element={<ProtectedRoute><BookRide /></ProtectedRoute>} />
+                    <Route path="/payment"          element={<ProtectedRoute><Payment /></ProtectedRoute>} />
+                    <Route path="/status"           element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
+                    <Route path="/status/:rideId"   element={<ProtectedRoute><RideStatus /></ProtectedRoute>} />
+                    <Route path="/history"          element={<ProtectedRoute><RideHistory /></ProtectedRoute>} />
+                    <Route path="/terms"            element={<Legal kind="terms" />} />
+                    <Route path="/privacy"          element={<Legal kind="privacy" />} />
+                    <Route path="/driver/login"     element={<DriverLogin />} />
+                    <Route path="/driver/dashboard" element={<DriverRoute><DriverDashboard /></DriverRoute>} />
+                    <Route path="/admin/login"      element={<AdminLogin />} />
+                    <Route path="/admin/dashboard"  element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+                    <Route path="*"                 element={<NotFound />} />
+                </Routes>
+            </Suspense>
+        </RouteErrorBoundary>
     );
 }
 

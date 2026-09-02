@@ -1,29 +1,25 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Navigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, Navigate, useLocation, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, PaymentRequestButtonElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
 import { DRIVER_SHARE, PLATFORM_SHARE } from '../constants/fees';
+import { fetchJson, getFunctionsBaseUrl, isAbortError } from '../utils/net';
 
-// Loaded once at module level — never recreated on re-renders
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
-
-// Same derivation pattern documented in .env.example — override for non-default regions.
-function getFunctionsBaseUrl() {
-  if (process.env.REACT_APP_FUNCTIONS_BASE_URL) return process.env.REACT_APP_FUNCTIONS_BASE_URL;
-  const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-  return projectId ? `https://us-central1-${projectId}.cloudfunctions.net` : '';
-}
+// Loaded once at module level — never recreated on re-renders. loadStripe(undefined)
+// rejects and leaves the Pay button disabled forever, so guard the key first.
+const STRIPE_KEY    = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = STRIPE_KEY ? loadStripe(STRIPE_KEY) : null;
 
 const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: true,
   style: {
     base: {
       color: '#ffffff',
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
       fontSmoothing: 'antialiased',
-      fontSize: '15px',
+      fontSize: '16px', // < 16px makes iOS Safari zoom into the Stripe iframe on focus
       '::placeholder': { color: '#4B5563' },
     },
     invalid: {
@@ -81,6 +77,31 @@ const PAYMENT_METHODS = [
   { id: 'google', label: 'Google Pay', Icon: IconGoogle },
 ];
 
+// ── Page chrome ───────────────────────────────────────────────────────────────
+function Header({ onBack }) {
+  return (
+    <header className="flex items-center px-5 md:px-6 py-4 border-b border-gray-800">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="Back to book ride"
+        className={`flex items-center gap-2 text-gray-400 hover:text-white transition text-sm mr-4 px-2 py-2 -ml-2 ${ring} rounded`}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back
+      </button>
+      <Link to="/" aria-label="RideX — home" className={`flex items-center gap-2 ${ring} rounded-lg`}>
+        <div className="w-7 h-7 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
+          <span className="text-black font-black text-xs">R</span>
+        </div>
+        <span className="text-lg font-black">RideX</span>
+      </Link>
+    </header>
+  );
+}
+
 // ── PaymentForm ───────────────────────────────────────────────────────────────
 
 function PaymentForm({ price, rideDetails }) {
@@ -93,6 +114,36 @@ function PaymentForm({ price, rideDetails }) {
   const [selected,         setSelected]         = useState('card');
   const [paymentRequest,   setPaymentRequest]   = useState(null);
   const [nativePayType,    setNativePayType]    = useState(null); // 'applePay' | 'googlePay' | null
+  const walletInFlightRef = useRef(false);
+
+  const goToStatus = () => navigate(`/status/${rideDetails.rideId}`, { state: { ride: rideDetails } });
+
+  // Calls the createPaymentIntent Cloud Function. Returns { res, data } or
+  // throws a user-facing Error (config / session problems).
+  const postPaymentIntent = async (paymentMethodId) => {
+    const baseUrl = getFunctionsBaseUrl();
+    if (!baseUrl) throw new Error('Payments are not configured for this deployment yet.');
+    if (!auth.currentUser) throw new Error('Your session has expired. Please log in again.');
+    const idToken = await auth.currentUser.getIdToken();
+    return fetchJson(`${baseUrl}/createPaymentIntent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ paymentMethodId, rideId: rideDetails.rideId }),
+    }, { timeoutMs: 30000 });
+  };
+
+  // Maps a non-OK Cloud Function response to a message; 409 means the ride is
+  // already paid — that is a success from the customer's point of view.
+  const describeFailure = (res, data) => {
+    if (res.status === 409) return null;
+    if (res.status === 401) return 'Your session has expired. Please log in again.';
+    if (res.status === 402 || res.status === 400) return data.error || 'Your card was declined. Please try another card.';
+    if (res.status === 429) return 'Too many attempts — please wait a moment and try again.';
+    return data.error || `Payment failed (error ${res.status}). Please try again.`;
+  };
 
   // Initialise the PaymentRequest once Stripe is ready. canMakePayment() tells
   // us which native wallets are available on this device/browser combination.
@@ -117,29 +168,27 @@ function PaymentForm({ price, rideDetails }) {
     if (!paymentRequest) return;
 
     const handlePaymentMethod = async (ev) => {
+      if (walletInFlightRef.current) { ev.complete('fail'); return; }
+      walletInFlightRef.current = true;
       if (!auth.currentUser || !rideDetails.rideId) {
         ev.complete('fail');
         setError('Session expired or ride not found. Please start over.');
+        walletInFlightRef.current = false;
         return;
       }
       try {
-        const idToken = await auth.currentUser.getIdToken();
-        const baseUrl = getFunctionsBaseUrl();
-        const res = await fetch(`${baseUrl}/createPaymentIntent`, {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            paymentMethodId: ev.paymentMethod.id,
-            rideId: rideDetails.rideId,
-          }),
-        });
-        const data = await res.json();
+        const { res, data } = await postPaymentIntent(ev.paymentMethod.id);
+
+        if (!res.ok) {
+          const msg = describeFailure(res, data);
+          if (msg === null) { ev.complete('success'); goToStatus(); return; } // already paid
+          ev.complete('fail');
+          setError(msg);
+          return;
+        }
 
         if (data.requiresAction) {
-          // Confirm 3DS without re-calling backend (avoids double-charge).
+          // Confirm 3DS without re-calling the backend (avoids a double charge).
           const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(
             data.clientSecret,
             { payment_method: ev.paymentMethod.id },
@@ -147,137 +196,106 @@ function PaymentForm({ price, rideDetails }) {
           );
           if (confirmError) { ev.complete('fail'); setError(confirmError.message); return; }
           if (paymentIntent?.status === 'requires_action') {
+            // Stripe requires the wallet sheet to close before the 3DS challenge can show
             ev.complete('success');
             const { error: actionErr } = await stripe.confirmCardPayment(data.clientSecret);
-            if (actionErr) { setError(actionErr.message); return; }
+            if (actionErr) { setError(`${actionErr.message} Your card has not been charged.`); return; }
           } else {
             ev.complete('success');
           }
-          navigate('/status', { state: { ride: rideDetails } });
+          goToStatus();
           return;
         }
         if (!data.success) { ev.complete('fail'); setError(data.error || 'Payment failed.'); return; }
         ev.complete('success');
-        navigate('/status', { state: { ride: rideDetails } });
-      } catch {
+        goToStatus();
+      } catch (err) {
         ev.complete('fail');
-        setError('Payment failed. Please check your connection and try again.');
+        setError(
+          isAbortError(err)
+            ? 'The payment server took too long to respond. Check "My Rides" before trying again.'
+            : err?.message || 'Payment failed. Please check your connection and try again.'
+        );
+      } finally {
+        walletInFlightRef.current = false;
       }
     };
 
     paymentRequest.on('paymentmethod', handlePaymentMethod);
     return () => paymentRequest.off('paymentmethod', handlePaymentMethod);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentRequest, stripe, rideDetails, navigate]);
 
   const handleCardPay = async () => {
+    if (loading) return;
     setError('');
     if (!stripe || !elements) {
       setError('Stripe has not loaded yet. Please wait a moment and try again.');
       return;
     }
-    setLoading(true);
-
-    const cardElement = elements.getElement(CardElement);
-    const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
-      type: 'card',
-      card: cardElement,
-    });
-
-    if (stripeError) {
-      setError(stripeError.message);
-      setLoading(false);
-      return;
-    }
-
-    if (!auth.currentUser) {
-      setError('Your session has expired. Please log in again.');
-      setLoading(false);
-      return;
-    }
-
     if (!rideDetails.rideId) {
       setError('We could not find your saved ride. Please go back and book again.');
-      setLoading(false);
       return;
     }
+    setLoading(true);
 
     try {
-      const idToken = await auth.currentUser.getIdToken();
-      const baseUrl = getFunctionsBaseUrl();
-
-      const res = await fetch(`${baseUrl}/createPaymentIntent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          paymentMethodId: paymentMethod.id,
-          rideId: rideDetails.rideId,
-        }),
+      const cardElement = elements.getElement(CardElement);
+      const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
+        type: 'card',
+        card: cardElement,
       });
-      const data = await res.json();
+      if (stripeError) { setError(stripeError.message); return; }
+
+      const { res, data } = await postPaymentIntent(paymentMethod.id);
+
+      if (!res.ok) {
+        const msg = describeFailure(res, data);
+        if (msg === null) { goToStatus(); return; } // already paid
+        setError(msg);
+        return;
+      }
 
       if (data.requiresAction) {
         // 3D Secure step-up. Confirm directly with Stripe — do NOT call
         // createPaymentIntent again, that would charge the card a second time.
         const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret);
-        if (confirmError) {
-          setError(confirmError.message);
-          setLoading(false);
-          return;
-        }
+        if (confirmError) { setError(confirmError.message); return; }
         if (paymentIntent?.status !== 'succeeded') {
-          setError('Payment could not be completed. Please try again.');
-          setLoading(false);
+          setError('Payment could not be completed. Your card has not been charged. Please try again.');
           return;
         }
-        navigate('/status', { state: { ride: rideDetails } });
+        goToStatus();
         return;
       }
 
       if (!data.success) {
         setError(data.error || 'Payment could not be completed. Please try again.');
-        setLoading(false);
         return;
       }
 
-      navigate('/status', { state: { ride: rideDetails } });
-    } catch {
-      setError('Payment failed. Please check your connection and try again.');
+      goToStatus();
+    } catch (err) {
+      setError(
+        isAbortError(err)
+          ? 'The payment server took too long to respond. Check "My Rides" before trying again.'
+          : err?.message || 'Payment failed. Please check your connection and try again.'
+      );
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-
-      {/* ── Page header ────────────────────────────────────────────────────── */}
-      <header className="flex items-center px-6 py-4 border-b border-gray-800">
-        <button
-          onClick={() => navigate('/book')}
-          aria-label="Back to book ride"
-          className={`flex items-center gap-2 text-gray-400 hover:text-white transition text-sm mr-6 ${ring} rounded`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Back
-        </button>
-        <a href="/" aria-label="RideX — home" className={`flex items-center gap-2 ${ring} rounded-lg`}>
-          <div className="w-7 h-7 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
-            <span className="text-black font-black text-xs">R</span>
-          </div>
-          <span className="text-lg font-black">RideX</span>
-        </a>
-      </header>
+    <div className="min-h-screen min-h-dvh bg-black text-white flex flex-col">
+      <Header onBack={() => navigate('/book')} />
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-10">
+      <main className="flex-1 max-w-5xl mx-auto w-full px-5 md:px-6 py-8 md:py-10 pb-safe">
         <div className="flex flex-col lg:flex-row gap-8">
 
           {/* Left — Payment form */}
-          <section aria-labelledby="payment-heading" className="flex-1 max-w-md">
+          <section aria-labelledby="payment-heading" className="flex-1 lg:max-w-md">
             <h1 id="payment-heading" className="text-3xl font-black mb-1">Payment</h1>
             <p className="text-gray-500 text-sm mb-4">Choose your payment method</p>
 
@@ -300,7 +318,7 @@ function PaymentForm({ price, rideDetails }) {
             {/* Payment method selector — fieldset groups them as a radio group */}
             <fieldset className="mb-6">
               <legend className="sr-only">Payment method</legend>
-              <div className="grid grid-cols-3 gap-3" role="radiogroup">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3" role="radiogroup">
                 {PAYMENT_METHODS.map(({ id, label, Icon }) => (
                   <button
                     key={id}
@@ -308,7 +326,7 @@ function PaymentForm({ price, rideDetails }) {
                     role="radio"
                     aria-checked={selected === id}
                     onClick={() => setSelected(id)}
-                    className={`rounded-2xl p-4 text-center transition border flex flex-col items-center gap-1.5
+                    className={`rounded-2xl p-3 sm:p-4 min-h-[44px] text-center transition border flex flex-col items-center gap-1.5
                       ${ring}
                       ${selected === id
                         ? 'border-yellow-400 bg-yellow-400/10 text-white'
@@ -323,7 +341,7 @@ function PaymentForm({ price, rideDetails }) {
 
             {/* Stripe card element */}
             {selected === 'card' && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-5 mb-6">
                 <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-2xl p-5 mb-5 relative overflow-hidden" aria-hidden="true">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
                   <p className="text-black/60 text-xs mb-6">RIDEX CARD</p>
@@ -340,8 +358,13 @@ function PaymentForm({ price, rideDetails }) {
                   </div>
                 </div>
 
-                <label htmlFor="stripe-card" className="block text-xs text-gray-500 mb-2">Card details</label>
-                <div id="stripe-card" className="px-4 py-3 bg-black border border-gray-800 rounded-xl focus-within:border-yellow-400 transition">
+                {/* A <label> cannot target Stripe's iframe — use a labelled group instead */}
+                <p id="card-details-label" className="block text-xs text-gray-500 mb-2">Card details</p>
+                <div
+                  role="group"
+                  aria-labelledby="card-details-label"
+                  className="px-4 py-3 bg-black border border-gray-800 rounded-xl focus-within:border-yellow-400 transition"
+                >
                   <CardElement options={CARD_ELEMENT_OPTIONS} />
                 </div>
                 <p className="text-gray-600 text-xs mt-2">
@@ -354,7 +377,7 @@ function PaymentForm({ price, rideDetails }) {
             {(selected === 'apple' || selected === 'google') && (
               <div className="mb-6">
                 {paymentRequest && nativePayType ? (
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-5">
                     <p className="text-gray-400 text-xs mb-4 text-center">
                       {nativePayType === 'applePay' ? 'Apple Pay' : 'Google Pay'} detected — tap the button below to pay
                     </p>
@@ -372,7 +395,7 @@ function PaymentForm({ price, rideDetails }) {
                     />
                   </div>
                 ) : (
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 sm:p-8 text-center">
                     <div className="flex justify-center mb-3 text-gray-400">
                       {selected === 'apple' ? <IconApple /> : <IconGoogle />}
                     </div>
@@ -413,39 +436,39 @@ function PaymentForm({ price, rideDetails }) {
             </div>
           </section>
 
-          {/* Right — Order summary */}
-          <aside aria-label="Ride summary" className="lg:w-80">
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sticky top-6">
+          {/* Right — Order summary (shown ABOVE the form on phones so the total is visible before paying) */}
+          <aside aria-label="Ride summary" className="lg:w-80 order-first lg:order-none">
+            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-5 sm:p-6 lg:sticky lg:top-6">
               <h2 className="font-bold mb-5 text-lg">Ride Summary</h2>
 
               <div className="mb-5">
                 <div className="flex items-start gap-3 mb-3">
-                  <div className="mt-1 flex flex-col items-center gap-1" aria-hidden="true">
+                  <div className="mt-1 flex flex-col items-center gap-1 flex-shrink-0" aria-hidden="true">
                     <div className="w-3 h-3 rounded-full bg-green-400" />
                     <div className="w-0.5 h-8 bg-gray-700" />
                     <div className="w-3 h-3 rounded-sm bg-red-400" />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold mb-3">{rideDetails?.pickup || 'Pickup location'}</p>
-                    <p className="text-sm text-gray-400">{rideDetails?.destination || 'Destination'}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold mb-3 break-words">{rideDetails?.pickup || 'Pickup location'}</p>
+                    <p className="text-sm text-gray-400 break-words">{rideDetails?.destination || 'Destination'}</p>
                   </div>
                 </div>
               </div>
 
               <div className="border-t border-gray-800 pt-4 mb-4">
                 <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between gap-3 text-sm">
                     <span className="text-gray-500">{rideDetails?.rideType || 'Economy'} ride</span>
-                    <span>£{(price * DRIVER_SHARE).toFixed(2)}</span>
+                    <span className="tabular-nums">£{(price * DRIVER_SHARE).toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between gap-3 text-sm">
                     <span className="text-gray-500">Service fee ({PLATFORM_SHARE * 100}%)</span>
-                    <span>£{(price * PLATFORM_SHARE).toFixed(2)}</span>
+                    <span className="tabular-nums">£{(price * PLATFORM_SHARE).toFixed(2)}</span>
                   </div>
                 </div>
-                <div className="border-t border-gray-800 pt-3 flex justify-between items-center">
+                <div className="border-t border-gray-800 pt-3 flex justify-between items-center gap-3">
                   <span className="font-bold">Total</span>
-                  <span className="text-2xl font-black text-yellow-400">£{price.toFixed(2)}</span>
+                  <span className="text-2xl font-black text-yellow-400 tabular-nums">£{price.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -470,9 +493,29 @@ function PaymentForm({ price, rideDetails }) {
 function Payment() {
   const { rideDetails: ctxRide } = useAuth();
   const { state } = useLocation();
+  const navigate = useNavigate();
   const rideDetails = ctxRide ?? state?.ride;
   if (!rideDetails) return <Navigate to="/book" replace />;
+
   const price = parseFloat(rideDetails.price);
+  // A missing/garbage price used to render "Pay £NaN" with a live button
+  if (!Number.isFinite(price) || price <= 0) return <Navigate to="/book" replace />;
+
+  if (!stripePromise) {
+    return (
+      <div className="min-h-screen min-h-dvh bg-black text-white flex flex-col">
+        <Header onBack={() => navigate('/book')} />
+        <main className="flex-1 flex items-center justify-center px-5 py-10 pb-safe">
+          <div role="alert" className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 w-full max-w-md text-center">
+            <p className="text-white font-bold text-lg mb-2">Payments are not configured</p>
+            <p className="text-gray-500 text-sm">
+              Add <code className="bg-gray-800 px-1 rounded">REACT_APP_STRIPE_PUBLISHABLE_KEY</code> to the environment variables, then redeploy.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <Elements stripe={stripePromise}>

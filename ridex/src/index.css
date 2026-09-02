@@ -1,3 +1,34 @@
-@tailwind base;  
-@tailwind components;  
-@tailwind utilities; 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global mobile / accessibility baseline ─────────────────────────────────── */
+@layer base {
+  /* Native controls (select, scrollbars, autofill) render dark to match the app */
+  :root { color-scheme: dark; }
+  /* Stop iOS/Android inflating text after orientation changes */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* No rubber-band bounce behind fixed bars; no grey tap flash on buttons */
+  body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+  /* Safety net: any form control without an explicit text-size class stays at
+     16px+ on phones — iOS Safari zooms the whole page on focus below 16px. */
+  @media (max-width: 767px) {
+    input, select, textarea { font-size: max(16px, 1em); }
+  }
+  /* Respect the OS "reduce motion" setting for every animation/transition */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Driver position marker pulse (driver/components/ActiveRideMap.jsx) */
+@keyframes driverPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45); }
+  70%  { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}

@@ -432,8 +432,20 @@ exports.setDriverStatus = onRequest((req, res) => {
             const decoded = await verifyAuth(req);
             if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
 
-            const adminEmail = process.env.ADMIN_EMAIL;
-            if (!adminEmail || decoded.email !== adminEmail) {
+            // Admin = ADMIN_EMAIL env (case-insensitive) OR a document at /admins/{uid}
+            // (the same allow-list firestore.rules uses for admin reads).
+            const adminEmail  = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+            const callerEmail = (decoded.email || '').trim().toLowerCase();
+            let isAdmin = !!adminEmail && callerEmail === adminEmail;
+            if (!isAdmin) {
+                try {
+                    const adminSnap = await db.collection('admins').doc(decoded.uid).get();
+                    isAdmin = adminSnap.exists;
+                } catch (err) {
+                    logger.warn('admins lookup failed', { uid: decoded.uid, message: err?.message });
+                }
+            }
+            if (!isAdmin) {
                 return res.status(403).json({ error: 'Forbidden' });
             }
 

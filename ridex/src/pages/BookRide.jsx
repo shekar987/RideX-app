@@ -1,12 +1,14 @@
 // BookRide.jsx — Ride booking page with Mapbox map + location search
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { isOffline } from '../utils/net';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-// Token is applied per-map-instance inside MapDisplay to avoid crashing if env var is absent.
+// Token is read per component so a missing env var degrades gracefully instead of crashing.
+const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN;
 
 const KM_TO_MILES = 0.621371;
 
@@ -18,6 +20,8 @@ const RIDE_TYPES = [
 
 const ring       = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
 const ringOffset = 'focus-visible:ring-offset-2 focus-visible:ring-offset-black';
+
+const isPhone = () => typeof window !== 'undefined' && window.innerWidth < 640;
 
 // ── Haversine distance ────────────────────────────────────────────────────────
 function getDistanceKm(lat1, lon1, lat2, lon2) {
@@ -31,9 +35,11 @@ function getDistanceKm(lat1, lon1, lat2, lon2) {
 }
 
 // ── Shared atoms ──────────────────────────────────────────────────────────────
+// Full class names only — Tailwind cannot see interpolated `h-${n}`.
+const SPINNER_SIZE = { 4: 'h-4 w-4', 5: 'h-5 w-5' };
 function Spinner({ size = 5 }) {
     return (
-        <svg className={`animate-spin h-${size} w-${size} flex-shrink-0`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <svg className={`animate-spin ${SPINNER_SIZE[size] ?? SPINNER_SIZE[5]} flex-shrink-0`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path  className="opacity-75"  fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
         </svg>
@@ -68,16 +74,15 @@ function RideIcon({ id, className = 'w-6 h-6' }) {
     );
 }
 
-// ── Mapbox map — initialise once, update markers on prop change ───────────────
+// ── Mapbox map — initialise once, update markers on prop change, destroy on unmount ──
 function MapDisplay({ pickup, destination }) {
     const containerRef = useRef(null);
     const map          = useRef(null);
     const markersRef   = useRef([]);
-    const token        = process.env.REACT_APP_MAPBOX_TOKEN;
 
     useEffect(() => {
-        if (map.current || !containerRef.current || !token) return;
-        mapboxgl.accessToken = token;
+        if (map.current || !containerRef.current || !MAPBOX_TOKEN) return undefined;
+        mapboxgl.accessToken = MAPBOX_TOKEN;
         map.current = new mapboxgl.Map({
             container: containerRef.current,
             style:     'mapbox://styles/mapbox/dark-v11',
@@ -85,8 +90,17 @@ function MapDisplay({ pickup, destination }) {
             zoom:      12,
             maxBounds: [[-0.5104, 51.2868], [0.3340, 51.6919]],
         });
-        map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    }, [token]);
+        // Zoom buttons are redundant with pinch-zoom and overlap the rounded corner on phones
+        if (!isPhone()) map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        // Every /book visit used to leak a WebGL context (browsers cap them at ~16)
+        return () => {
+            markersRef.current.forEach(m => m.remove());
+            markersRef.current = [];
+            map.current?.remove();
+            map.current = null;
+        };
+    }, []);
 
     useEffect(() => {
         if (!map.current) return;
@@ -121,6 +135,7 @@ function MapDisplay({ pickup, destination }) {
             const geojson     = { type: 'Feature', geometry: { type: 'LineString', coordinates } };
 
             const drawRoute = () => {
+                if (!map.current) return;
                 if (map.current.getSource('route')) {
                     map.current.getSource('route').setData(geojson);
                 } else {
@@ -137,7 +152,8 @@ function MapDisplay({ pickup, destination }) {
             const bounds = new mapboxgl.LngLatBounds();
             bounds.extend([pickup.lng, pickup.lat]);
             bounds.extend([destination.lng, destination.lat]);
-            map.current.fitBounds(bounds, { padding: 80 });
+            // The phone map is only ~288px tall — 80px padding leaves no room for the route
+            map.current.fitBounds(bounds, { padding: isPhone() ? 40 : 80, maxZoom: 15 });
         } else {
             if (map.current.isStyleLoaded()) {
                 if (map.current.getLayer('route'))   map.current.removeLayer('route');
@@ -147,9 +163,9 @@ function MapDisplay({ pickup, destination }) {
         }
     }, [pickup, destination]);
 
-    if (!token) {
+    if (!MAPBOX_TOKEN) {
         return (
-            <div className="w-full h-full bg-gray-900 border border-gray-800 rounded-3xl flex flex-col items-center justify-center gap-3 p-8 text-center">
+            <div className="w-full h-full bg-gray-900 border border-gray-800 rounded-3xl flex flex-col items-center justify-center gap-3 p-6 sm:p-8 text-center">
                 <svg className="w-10 h-10 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
                 </svg>
@@ -159,65 +175,106 @@ function MapDisplay({ pickup, destination }) {
         );
     }
 
-    return <div ref={containerRef} style={{ height: '100%', width: '100%', borderRadius: '24px' }} />;
+    return <div ref={containerRef} className="w-full h-full" />;
 }
 
 // ── Location search input with Mapbox Geocoding + "use my location" ───────────
 function LocationInput({ inputId, label, color, value, onSelect, onError, showLocateMe }) {
-    const [query,    setQuery]    = useState(value?.name || '');
-    const [results,  setResults]  = useState([]);
-    const [loading,  setLoading]  = useState(false);
-    const [locating, setLocating] = useState(false);
+    const [query,       setQuery]       = useState(value?.name || '');
+    const [results,     setResults]     = useState([]);
+    const [loading,     setLoading]     = useState(false);
+    const [locating,    setLocating]    = useState(false);
+    const [activeIndex, setActiveIndex] = useState(-1);
     const timeoutRef = useRef(null);
+    const wrapperRef = useRef(null);
+
+    // Clear the pending debounce on unmount (it used to set state on a dead component)
+    useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+    // Close the dropdown when tapping / clicking anywhere else
+    useEffect(() => {
+        if (results.length === 0) return undefined;
+        const onPointerDown = e => {
+            if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+                setResults([]);
+                setActiveIndex(-1);
+            }
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        document.addEventListener('touchstart', onPointerDown, { passive: true });
+        return () => {
+            document.removeEventListener('mousedown', onPointerDown);
+            document.removeEventListener('touchstart', onPointerDown);
+        };
+    }, [results.length]);
+
+    const geocodeErrorMessage = (res) =>
+        res.status === 429 ? 'Too many searches — wait a moment and try again.' :
+        res.status === 401 ? 'Location search is not configured correctly.' :
+                             'Location search failed. Please try again.';
 
     const locateMe = () => {
-        if (!navigator.geolocation) { onError?.('Geolocation is not supported by your browser.'); return; }
+        if (!('geolocation' in navigator)) { onError?.('Location is not supported by your browser.'); return; }
+        if (!window.isSecureContext)       { onError?.('Location requires a secure (https) connection.'); return; }
+        if (!MAPBOX_TOKEN)                 { onError?.('Location search is unavailable right now.'); return; }
         setLocating(true);
         navigator.geolocation.getCurrentPosition(
             async ({ coords }) => {
                 try {
                     const res  = await fetch(
-                        `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords.longitude},${coords.latitude}.json?access_token=${mapboxgl.accessToken}&types=address,poi&limit=1`
+                        `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords.longitude},${coords.latitude}.json?access_token=${MAPBOX_TOKEN}&types=address,poi&limit=1`
                     );
-                    const data = await res.json();
-                    const place = data.features[0];
+                    if (!res.ok) throw new Error(geocodeErrorMessage(res));
+                    const data  = await res.json();
+                    const place = data.features?.[0];
                     const name  = place
                         ? place.place_name
                         : `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
                     setQuery(name.split(',').slice(0, 2).join(','));
                     onSelect({ name, lat: coords.latitude, lng: coords.longitude });
-                } catch {
-                    onError?.('Could not resolve your location. Try again.');
+                } catch (err) {
+                    onError?.(err?.message || 'Could not resolve your location. Try again.');
+                } finally {
+                    setLocating(false);
                 }
-                setLocating(false);
             },
-            () => { onError?.('Location access denied. Allow location permission and try again.'); setLocating(false); },
-            { enableHighAccuracy: true, timeout: 10000 }
+            err => {
+                setLocating(false);
+                onError?.(
+                    err?.code === 1 ? 'Location access denied. Allow location permission and try again.' :
+                    err?.code === 3 ? 'Finding your location timed out. Try again outdoors or type the address.' :
+                                      'Your location is unavailable right now. Type the address instead.'
+                );
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
         );
     };
 
     const search = (q) => {
         setQuery(q);
+        setActiveIndex(-1);
         clearTimeout(timeoutRef.current);
-        if (q.length < 3) { setResults([]); return; }
+        if (q.trim().length < 3 || !MAPBOX_TOKEN) { setResults([]); setLoading(false); return; }
         setLoading(true);
         timeoutRef.current = setTimeout(async () => {
             try {
                 const res  = await fetch(
-                    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxgl.accessToken}&limit=5&types=place,address,poi&bbox=-0.5104,51.2868,0.3340,51.6919&proximity=-0.1276,51.5074`
+                    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q.trim())}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=place,address,poi&bbox=-0.5104,51.2868,0.3340,51.6919&proximity=-0.1276,51.5074`
                 );
+                if (!res.ok) throw new Error(geocodeErrorMessage(res));
                 const data = await res.json();
-                setResults(data.features.map(f => ({
+                setResults((data.features || []).map(f => ({
                     place_id:     f.id,
                     display_name: f.place_name,
                     lat:          f.center[1],
                     lon:          f.center[0],
                 })));
-            } catch {
+            } catch (err) {
                 setResults([]);
-                onError?.('Location search failed. Please try again.');
+                onError?.(err?.message || 'Location search failed. Please try again.');
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         }, 500);
     };
 
@@ -225,13 +282,23 @@ function LocationInput({ inputId, label, color, value, onSelect, onError, showLo
         const safeName = String(place.display_name).replace(/<[^>]*>/g, '').trim().slice(0, 300);
         setQuery(safeName.split(',').slice(0, 2).join(','));
         setResults([]);
+        setActiveIndex(-1);
         onSelect({ name: safeName, lat: parseFloat(place.lat), lng: parseFloat(place.lon) });
+    };
+
+    // Keyboard navigation for the suggestion list
+    const onKeyDown = (e) => {
+        if (results.length === 0) return;
+        if (e.key === 'ArrowDown')      { e.preventDefault(); setActiveIndex(i => (i + 1) % results.length); }
+        else if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIndex(i => (i <= 0 ? results.length - 1 : i - 1)); }
+        else if (e.key === 'Enter')     { if (activeIndex >= 0) { e.preventDefault(); select(results[activeIndex]); } }
+        else if (e.key === 'Escape')    { setResults([]); setActiveIndex(-1); }
     };
 
     const colorDot = color === 'green' ? 'bg-green-400' : 'bg-red-400';
 
     return (
-        <div className="relative">
+        <div className="relative" ref={wrapperRef}>
             {/* Visually hidden label — associates the text with the input for screen readers */}
             <label htmlFor={inputId} className="sr-only">{label}</label>
 
@@ -242,7 +309,9 @@ function LocationInput({ inputId, label, color, value, onSelect, onError, showLo
                     type="text"
                     value={query}
                     onChange={e => search(e.target.value)}
-                    placeholder={label}
+                    onKeyDown={onKeyDown}
+                    placeholder={MAPBOX_TOKEN ? label : 'Search unavailable'}
+                    disabled={!MAPBOX_TOKEN}
                     maxLength={200}
                     autoComplete="off"
                     role="combobox"
@@ -250,7 +319,8 @@ function LocationInput({ inputId, label, color, value, onSelect, onError, showLo
                     aria-expanded={results.length > 0}
                     aria-controls={`${inputId}-results`}
                     aria-haspopup="listbox"
-                    className="flex-1 bg-transparent text-white placeholder-gray-600 focus:outline-none text-sm"
+                    aria-activedescendant={activeIndex >= 0 ? `${inputId}-opt-${activeIndex}` : undefined}
+                    className="flex-1 min-w-0 bg-transparent text-white placeholder-gray-600 focus:outline-none text-base disabled:opacity-50"
                 />
                 {loading && <Spinner size={4} />}
                 {showLocateMe && (
@@ -259,12 +329,12 @@ function LocationInput({ inputId, label, color, value, onSelect, onError, showLo
                         onClick={locateMe}
                         disabled={locating}
                         aria-label="Use my current location"
-                        className={`text-gray-500 hover:text-green-400 transition flex-shrink-0 disabled:opacity-50 ${ring} rounded`}
+                        className={`text-gray-500 hover:text-green-400 transition flex-shrink-0 disabled:opacity-50 p-2 -m-2 ${ring} rounded`}
                     >
                         {locating
                             ? <Spinner size={4} />
                             : (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                                     <circle cx="12" cy="12" r="3" />
                                     <path strokeLinecap="round" d="M12 2v3M12 19v3M2 12h3M19 12h3" />
                                     <circle cx="12" cy="12" r="9" strokeDasharray="4 2" />
@@ -275,29 +345,30 @@ function LocationInput({ inputId, label, color, value, onSelect, onError, showLo
                 )}
             </div>
 
-            {/* Dropdown results — buttons for keyboard accessibility */}
+            {/* Dropdown results — capped height so it never covers the whole phone screen */}
             {results.length > 0 && (
                 <ul
                     id={`${inputId}-results`}
                     role="listbox"
                     aria-label={`${label} suggestions`}
-                    className="absolute top-full left-0 right-0 bg-gray-800 border border-gray-700 rounded-xl z-50 overflow-hidden shadow-xl"
+                    className="absolute top-full left-0 right-0 bg-gray-800 border border-gray-700 rounded-xl z-50 overflow-y-auto overscroll-contain max-h-64 shadow-xl"
                 >
-                    {results.map(r => (
-                        <li key={r.place_id} role="option" aria-selected="false">
+                    {results.map((r, i) => (
+                        <li key={r.place_id} id={`${inputId}-opt-${i}`} role="option" aria-selected={i === activeIndex}>
                             <button
                                 type="button"
                                 onClick={() => select(r)}
-                                className={`w-full text-left flex items-center gap-2.5 px-4 py-3 text-sm text-gray-300
-                                    hover:bg-gray-700 border-b border-gray-700/60 last:border-0 transition
-                                    ${ring} rounded-none`}
+                                onMouseEnter={() => setActiveIndex(i)}
+                                className={`w-full text-left flex items-center gap-2.5 px-4 py-3 min-h-[44px] text-sm text-gray-300
+                                    border-b border-gray-700/60 last:border-0 transition ${ring} rounded-none
+                                    ${i === activeIndex ? 'bg-gray-700' : 'hover:bg-gray-700'}`}
                             >
                                 {/* Pin icon instead of 📍 emoji */}
                                 <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
-                                <span className="truncate">{r.display_name.split(',').slice(0, 3).join(',')}</span>
+                                <span className="min-w-0 flex-1 truncate">{r.display_name.split(',').slice(0, 3).join(',')}</span>
                             </button>
                         </li>
                     ))}
@@ -322,6 +393,9 @@ function BookRide() {
     const [loading,        setLoading]        = useState(false);
     const [confirmLoading, setConfirmLoading] = useState(false);
     const [error,          setError]          = useState('');
+    const priceTimerRef = useRef(null);
+
+    useEffect(() => () => clearTimeout(priceTimerRef.current), []);
 
     const calculatePrice = useCallback(() => {
         if (!pickup || !destination) {
@@ -330,12 +404,13 @@ function BookRide() {
         }
         setError('');
         setLoading(true);
-        setTimeout(() => {
-            const km                 = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
-            const miles              = parseFloat((km * KM_TO_MILES).toFixed(1));
-            const rate               = RIDE_TYPES.find(r => r.name === selectedRide).ratePerMile;
-            const passengerMult      = 1 + (passengers - 1) * 0.1;
-            const total              = parseFloat((2.5 + miles * rate * passengerMult).toFixed(2));
+        clearTimeout(priceTimerRef.current);
+        priceTimerRef.current = setTimeout(() => {
+            const km            = getDistanceKm(pickup.lat, pickup.lng, destination.lat, destination.lng);
+            const miles         = parseFloat((km * KM_TO_MILES).toFixed(1));
+            const rate          = RIDE_TYPES.find(r => r.name === selectedRide)?.ratePerMile ?? RIDE_TYPES[0].ratePerMile;
+            const passengerMult = 1 + (passengers - 1) * 0.1;
+            const total         = parseFloat((2.5 + miles * rate * passengerMult).toFixed(2));
             setDistance(miles);
             setDuration(Math.round((km / 40) * 60));
             setPrice(total);
@@ -343,47 +418,53 @@ function BookRide() {
         }, 1500);
     }, [pickup, destination, selectedRide, passengers]);
 
+    // Save the ride, then go to payment. Never navigates without a real ride id —
+    // the old 3-second race left orphaned rides on the marketplace and sent the
+    // customer to a payment page that could not work.
     const handleConfirm = useCallback(async () => {
+        if (confirmLoading) return;
+        if (!pickup || !destination || !Number.isFinite(price)) { setError('Please get a price estimate first.'); return; }
+        if (isOffline()) { setError('You appear to be offline. Reconnect and try again.'); return; }
+
         setConfirmLoading(true);
         setError('');
 
         const details = {
-            pickup:         pickup?.name?.split(',').slice(0, 2).join(','),
-            destination:    destination?.name?.split(',').slice(0, 2).join(','),
+            pickup:         pickup.name?.split(',').slice(0, 2).join(','),
+            destination:    destination.name?.split(',').slice(0, 2).join(','),
             price, rideType: selectedRide, distance, duration, passengers,
-            pickupLat:      pickup?.lat,      pickupLng:      pickup?.lng,
-            destinationLat: destination?.lat, destinationLng: destination?.lng,
+            pickupLat:      pickup.lat,      pickupLng:      pickup.lng,
+            destinationLat: destination.lat, destinationLng: destination.lng,
         };
 
-        let rideId = null;
         try {
-            rideId = await Promise.race([
-                saveRide(details),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-            ]);
-        } catch { /* fallback to local ID */ }
+            const rideId = await saveRide(details);
+            const fullDetails = { ...details, id: rideId, rideId, status: 'confirmed', createdAt: Date.now() };
+            setRideDetails(fullDetails);
+            navigate('/payment', { state: { ride: fullDetails } });
+        } catch (err) {
+            const code = err?.message === 'NOT_AUTHENTICATED' || err?.message === 'TIMEOUT' || err?.message === 'INVALID_PRICE'
+                ? err.message
+                : err?.code;
+            setError(
+                code === 'NOT_AUTHENTICATED' ? 'Your session has expired. Please log in again.' :
+                code === 'TIMEOUT'           ? 'Saving your booking is taking too long. Check your connection and try again.' :
+                code === 'INVALID_PRICE'     ? 'The fare could not be calculated. Please get a new estimate.' :
+                code === 'permission-denied' ? 'We could not save this booking. Please try again.' :
+                                               'Could not confirm your ride. Please try again.'
+            );
+            setConfirmLoading(false);
+        }
+    }, [confirmLoading, pickup, destination, price, selectedRide, distance, duration, passengers, saveRide, setRideDetails, navigate]);
 
-        const fullDetails = {
-            ...details,
-            id:        rideId || `local_${Date.now()}`,
-            rideId,
-            status:    'confirmed',
-            createdAt: Date.now(),
-        };
+    const handleLogout = async () => {
+        try { await logout(); } finally { navigate('/'); }
+    };
 
-        setRideDetails(fullDetails);
-
-        try {
-            const prev = JSON.parse(localStorage.getItem('ridex_rides') || '[]');
-            localStorage.setItem('ridex_rides', JSON.stringify([fullDetails, ...prev].slice(0, 50)));
-        } catch { /* localStorage unavailable */ }
-
-        setConfirmLoading(false);
-        navigate('/payment', { state: { ride: fullDetails } });
-    }, [pickup, destination, price, selectedRide, distance, duration, passengers, saveRide, setRideDetails, navigate]);
+    const canEstimate = pickup && destination && !loading && !confirmLoading;
 
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen min-h-dvh bg-black text-white">
 
             {/* ── Header ── */}
             <header>
@@ -391,26 +472,28 @@ function BookRide() {
                     aria-label="Main navigation"
                     className="flex justify-between items-center px-5 md:px-6 py-4 border-b border-gray-800"
                 >
-                    <a href="/" aria-label="RideX home" className={`flex items-center gap-2 rounded-lg ${ring}`}>
+                    <Link to="/" aria-label="RideX home" className={`flex items-center gap-2 rounded-lg ${ring}`}>
                         <div className="w-7 h-7 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
                             <span className="text-black font-black text-xs">R</span>
                         </div>
                         <span className="text-lg font-black">RideX</span>
-                    </a>
+                    </Link>
 
                     <div className="flex items-center gap-2">
                         <p className="text-gray-400 text-sm hidden md:block truncate max-w-[160px]">
                             {user?.displayName || user?.email}
                         </p>
                         <button
+                            type="button"
                             onClick={() => navigate('/history')}
-                            className={`text-sm text-gray-400 hover:text-white transition border border-gray-800 px-3 py-1.5 rounded-full ${ring}`}
+                            className={`text-sm text-gray-400 hover:text-white transition border border-gray-800 px-4 py-2 sm:py-1.5 rounded-full ${ring}`}
                         >
                             My Rides
                         </button>
                         <button
-                            onClick={() => { logout(); navigate('/'); }}
-                            className={`text-sm text-gray-500 hover:text-red-400 transition border border-gray-800 px-3 py-1.5 rounded-full ${ring}`}
+                            type="button"
+                            onClick={handleLogout}
+                            className={`text-sm text-gray-500 hover:text-red-400 transition border border-gray-800 px-4 py-2 sm:py-1.5 rounded-full ${ring}`}
                         >
                             Logout
                         </button>
@@ -419,7 +502,7 @@ function BookRide() {
             </header>
 
             {/* ── Main ── */}
-            <main>
+            <main className="pb-safe">
                 <div className="flex flex-col lg:flex-row max-w-7xl mx-auto px-5 md:px-6 py-8 gap-8">
 
                     {/* ── Left: booking form ── */}
@@ -443,7 +526,7 @@ function BookRide() {
                                 label="Pickup location"
                                 color="green"
                                 value={pickup}
-                                onSelect={setPickup}
+                                onSelect={p => { setPickup(p); setPrice(null); }}
                                 onError={setError}
                                 showLocateMe
                             />
@@ -453,7 +536,7 @@ function BookRide() {
                                 label="Where to?"
                                 color="red"
                                 value={destination}
-                                onSelect={setDestination}
+                                onSelect={d => { setDestination(d); setPrice(null); }}
                                 onError={setError}
                             />
                         </div>
@@ -464,10 +547,10 @@ function BookRide() {
                             <div className="flex items-center gap-4">
                                 <button
                                     type="button"
-                                    onClick={() => setPassengers(p => Math.max(1, p - 1))}
-                                    disabled={passengers <= 1}
+                                    onClick={() => { setPassengers(p => Math.max(1, p - 1)); setPrice(null); }}
+                                    disabled={passengers <= 1 || confirmLoading}
                                     aria-label={`Decrease passengers, currently ${passengers}`}
-                                    className={`w-9 h-9 bg-gray-800 rounded-full font-bold hover:bg-gray-700 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${ring} rounded-full`}
+                                    className={`w-11 h-11 bg-gray-800 rounded-full font-bold hover:bg-gray-700 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${ring}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
@@ -475,7 +558,7 @@ function BookRide() {
                                 </button>
 
                                 <span
-                                    className="text-2xl font-black w-8 text-center"
+                                    className="text-2xl font-black w-8 text-center tabular-nums"
                                     aria-live="polite"
                                     aria-label={`${passengers} passenger${passengers !== 1 ? 's' : ''}`}
                                 >
@@ -484,10 +567,10 @@ function BookRide() {
 
                                 <button
                                     type="button"
-                                    onClick={() => setPassengers(p => Math.min(6, p + 1))}
-                                    disabled={passengers >= 6}
+                                    onClick={() => { setPassengers(p => Math.min(6, p + 1)); setPrice(null); }}
+                                    disabled={passengers >= 6 || confirmLoading}
                                     aria-label={`Increase passengers, currently ${passengers}`}
-                                    className={`w-9 h-9 bg-gray-800 rounded-full font-bold hover:bg-gray-700 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${ring} rounded-full`}
+                                    className={`w-11 h-11 bg-gray-800 rounded-full font-bold hover:bg-gray-700 transition flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${ring}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -503,7 +586,7 @@ function BookRide() {
                         {/* Ride type selector */}
                         <fieldset className="mb-5">
                             <legend className="text-xs text-gray-500 font-medium uppercase tracking-widest mb-3">Ride type</legend>
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3" role="radiogroup" aria-label="Ride type">
                                 {RIDE_TYPES.map(ride => {
                                     const isSelected = selectedRide === ride.name;
                                     return (
@@ -512,9 +595,10 @@ function BookRide() {
                                             type="button"
                                             role="radio"
                                             aria-checked={isSelected}
+                                            disabled={confirmLoading}
                                             onClick={() => { setSelectedRide(ride.name); setPrice(null); }}
-                                            className={`rounded-2xl p-3 text-center transition border flex flex-col items-center gap-1
-                                                ${ring}
+                                            className={`rounded-2xl p-2.5 sm:p-3 min-h-[44px] text-center transition border flex flex-col items-center gap-1
+                                                disabled:opacity-60 ${ring}
                                                 ${isSelected
                                                     ? 'bg-yellow-400 text-black border-yellow-400'
                                                     : 'bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600'}`}
@@ -534,10 +618,10 @@ function BookRide() {
                         <button
                             type="button"
                             onClick={calculatePrice}
-                            disabled={!pickup || !destination || loading}
+                            disabled={!canEstimate}
                             className={`w-full py-4 font-black rounded-2xl transition text-base mb-4
                                 flex items-center justify-center gap-2 ${ring} ${ringOffset}
-                                ${pickup && destination && !loading
+                                ${canEstimate
                                     ? 'bg-white text-black hover:bg-gray-100 active:bg-gray-200'
                                     : 'bg-gray-900 text-gray-600 cursor-not-allowed border border-gray-800'}`}
                         >
@@ -545,21 +629,21 @@ function BookRide() {
                         </button>
 
                         {/* Price result */}
-                        {price && (
-                            <div className="bg-gray-900 border border-yellow-400/30 rounded-2xl p-5">
-                                {/* Trip stats */}
-                                <div className="grid grid-cols-3 gap-3 mb-4 text-center">
-                                    <div className="bg-black/50 rounded-xl p-3">
+                        {Number.isFinite(price) && (
+                            <div className="bg-gray-900 border border-yellow-400/30 rounded-2xl p-4 sm:p-5">
+                                {/* Trip stats — tight gaps and a smaller phone font so £xx.xx never overflows a 3-up tile */}
+                                <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 text-center">
+                                    <div className="bg-black/50 rounded-xl p-2.5 sm:p-3 min-w-0">
                                         <p className="text-gray-500 text-xs mb-1">Fare</p>
-                                        <p className="text-xl font-black text-yellow-400">£{price}</p>
+                                        <p className="text-lg sm:text-xl font-black text-yellow-400 tabular-nums truncate">£{price.toFixed(2)}</p>
                                     </div>
-                                    <div className="bg-black/50 rounded-xl p-3">
+                                    <div className="bg-black/50 rounded-xl p-2.5 sm:p-3 min-w-0">
                                         <p className="text-gray-500 text-xs mb-1">Distance</p>
-                                        <p className="text-xl font-black">{distance} mi</p>
+                                        <p className="text-lg sm:text-xl font-black tabular-nums truncate">{distance} mi</p>
                                     </div>
-                                    <div className="bg-black/50 rounded-xl p-3">
+                                    <div className="bg-black/50 rounded-xl p-2.5 sm:p-3 min-w-0">
                                         <p className="text-gray-500 text-xs mb-1">Est. time</p>
-                                        <p className="text-xl font-black">{duration} min</p>
+                                        <p className="text-lg sm:text-xl font-black tabular-nums truncate">{duration} min</p>
                                     </div>
                                 </div>
 
@@ -570,7 +654,7 @@ function BookRide() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-semibold">James Wilson</p>
-                                        <p className="text-xs text-gray-500">Toyota Camry · 4.9★ · 2 min away</p>
+                                        <p className="text-xs text-gray-500 truncate">Toyota Camry · 4.9★ · 2 min away</p>
                                     </div>
                                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
                                 </div>
@@ -586,17 +670,17 @@ function BookRide() {
                                 >
                                     {confirmLoading
                                         ? <><Spinner size={5} />Confirming…</>
-                                        : `Confirm ${selectedRide} — £${price} →`}
+                                        : `Confirm ${selectedRide} — £${price.toFixed(2)} →`}
                                 </button>
                             </div>
                         )}
                     </section>
 
-                    {/* ── Right: map — responsive height ── */}
+                    {/* ── Right: map — responsive height, never taller than the viewport on laptops ── */}
                     <div
-                        className="flex-1 rounded-3xl overflow-hidden border border-gray-800 h-72 sm:h-96 lg:h-auto lg:min-h-[600px]"
+                        className="flex-1 rounded-3xl overflow-hidden border border-gray-800 h-72 sm:h-96 lg:h-auto lg:min-h-[min(600px,70vh)]"
+                        role="region"
                         aria-label="Route map"
-                        role="img"
                     >
                         <MapDisplay pickup={pickup} destination={destination} />
                     </div>

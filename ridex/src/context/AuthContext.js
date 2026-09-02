@@ -7,81 +7,98 @@ import {
     updateProfile,
     sendEmailVerification,
     sendPasswordResetEmail,
+    reload,
 } from 'firebase/auth';
 import {
     collection,
-    addDoc,
     doc,
+    setDoc,
+    updateDoc,
     onSnapshot,
     serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import {
+    checkLockout,
+    recordFailedAttempt,
+    clearAttemptData,
+    clearAllAttemptData,
+    MAX_ATTEMPTS,
+} from '../utils/loginAttempts';
+import { readJson, writeJson, removeKey, clearByPrefix } from '../utils/storage';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS   = 15 * 60 * 1000;
+// The in-flight booking (BookRide → Payment → RideStatus) is mirrored to
+// sessionStorage so a page reload mid-checkout does not lose the ride.
+const CURRENT_RIDE_KEY = 'ridex_current_ride';
 
-function getAttemptData(email) {
-    try {
-        const raw = sessionStorage.getItem(`_la_${btoa(email.toLowerCase().trim())}`);
-        return raw ? JSON.parse(raw) : { count: 0, lockedUntil: null };
-    } catch { return { count: 0, lockedUntil: null }; }
-}
-function setAttemptData(email, data) {
-    try { sessionStorage.setItem(`_la_${btoa(email.toLowerCase().trim())}`, JSON.stringify(data)); } catch {}
-}
-function clearAttemptData(email) {
-    try { sessionStorage.removeItem(`_la_${btoa(email.toLowerCase().trim())}`); } catch {}
-}
+// Firestore never rejects a write while offline — it queues it. Without a
+// timeout the Confirm button would spin forever on a dead connection.
+const SAVE_RIDE_TIMEOUT_MS = 15000;
+
+const CREDENTIAL_ERROR_CODES = [
+    'auth/wrong-password',
+    'auth/user-not-found',
+    'auth/invalid-credential',
+    'auth/invalid-email',
+];
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [rideDetails, setRideDetails] = useState(null);
+    const [user,          setUser]          = useState(null);
+    // reload() mutates the Firebase User in place (same object reference), so the
+    // verified flag lives in its own state — otherwise nothing re-renders after
+    // the customer clicks their verification link.
+    const [emailVerified, setEmailVerified] = useState(false);
+    const [loading,       setLoading]       = useState(true);
+    const [rideDetails,   setRideState]     = useState(() => readJson(CURRENT_RIDE_KEY, null, 'session'));
 
+    // ── Auth state ────────────────────────────────────────────────────────────
     useEffect(() => {
-        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-            // Keep unverified sessions authenticated for flows that need an ID token
-            // (e.g. creating pending driver applications), while gating app access
-            // through route guards that check `user.emailVerified`.
-            if (firebaseUser && !firebaseUser.emailVerified) {
-                setUser(firebaseUser);
-                setLoading(false);
-                return;
-            }
+        const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+            // Unverified sessions stay signed in (pending driver applications need
+            // an ID token); route guards gate on `emailVerified` instead.
             setUser(firebaseUser);
+            setEmailVerified(!!firebaseUser?.emailVerified);
             setLoading(false);
         });
         return unsub;
     }, []);
 
-    // ── useCallback: stable references so downstream useMemo deps are accurate ─
-
-    const register = useCallback(async (name, email, password) => {
-        const result = await createUserWithEmailAndPassword(auth, email, password);
-        // Send verification email immediately, before any other operations,
-        // so delivery is not delayed by subsequent profile update calls.
-        const actionCodeSettings = {
-            url: window.location.origin + '/login',
-            handleCodeInApp: false,
-        };
-        await sendEmailVerification(result.user, actionCodeSettings);
-        await updateProfile(result.user, { displayName: name });
-        // onAuthStateChanged fires next and sets the real Firebase User object —
-        // do NOT call setUser here with a spread (plain objects lack User methods).
+    // ── Current ride (in-memory + sessionStorage mirror) ─────────────────────
+    const setRideDetails = useCallback((details) => {
+        setRideState(details);
+        if (details) writeJson(CURRENT_RIDE_KEY, details, 'session');
+        else removeKey(CURRENT_RIDE_KEY, 'session');
     }, []);
 
-    const login = useCallback(async (email, password) => {
-        const now  = Date.now();
-        const data = getAttemptData(email);
-
-        if (data.lockedUntil && now < data.lockedUntil) {
-            return { success: false, locked: true, lockedUntil: data.lockedUntil, attemptsLeft: 0, error: 'Account temporarily locked.' };
+    // ── Register ──────────────────────────────────────────────────────────────
+    // Returns { verificationSent }. Once the Auth account exists we must NOT throw
+    // on a follow-up failure (rate limit, network blip): the caller would show
+    // "registration failed", and retrying would hit email-already-in-use — a
+    // dead end. The success screen offers a resend instead.
+    const register = useCallback(async (name, email, password) => {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        let verificationSent = true;
+        try {
+            await sendEmailVerification(result.user, {
+                url: window.location.origin + '/login',
+                handleCodeInApp: false,
+            });
+        } catch {
+            verificationSent = false;
         }
-        if (data.lockedUntil && now >= data.lockedUntil) {
-            setAttemptData(email, { count: 0, lockedUntil: null });
-            data.count = 0; data.lockedUntil = null;
+        try { await updateProfile(result.user, { displayName: name }); } catch { /* cosmetic */ }
+        // onAuthStateChanged fires next and sets the real Firebase User object —
+        // do NOT call setUser here with a spread (plain objects lack User methods).
+        return { verificationSent };
+    }, []);
+
+    // ── Login (with client-side attempt limiter) ─────────────────────────────
+    const login = useCallback(async (email, password) => {
+        const lock = checkLockout(email);
+        if (lock.locked) {
+            return { success: false, locked: true, lockedUntil: lock.lockedUntil, attemptsLeft: 0, error: 'Account temporarily locked.' };
         }
 
         try {
@@ -89,85 +106,148 @@ export function AuthProvider({ children }) {
             clearAttemptData(email);
             return { success: true, locked: false, attemptsLeft: MAX_ATTEMPTS, error: null, emailVerified: credential.user.emailVerified };
         } catch (err) {
-            const isCredential =
-                err.code === 'auth/wrong-password'     ||
-                err.code === 'auth/user-not-found'     ||
-                err.code === 'auth/invalid-credential' ||
-                err.code === 'auth/invalid-email';
-
-            if (isCredential) {
-                const newCount = (data.count || 0) + 1;
-                const locked   = newCount >= MAX_ATTEMPTS;
-                setAttemptData(email, { count: newCount, lockedUntil: locked ? now + LOCKOUT_MS : null });
+            const code = err?.code;
+            if (CREDENTIAL_ERROR_CODES.includes(code)) {
+                const r = recordFailedAttempt(email);
                 return {
-                    success: false, locked,
-                    lockedUntil: locked ? now + LOCKOUT_MS : null,
-                    attemptsLeft: Math.max(0, MAX_ATTEMPTS - newCount),
-                    error: locked ? 'Too many failed attempts. Account locked for 15 minutes.' : 'Invalid email or password.',
+                    success: false,
+                    locked: r.locked,
+                    lockedUntil: r.lockedUntil,
+                    attemptsLeft: r.attemptsLeft,
+                    error: r.locked ? 'Too many failed attempts. Account locked for 15 minutes.' : 'Invalid email or password.',
                 };
             }
-            return { success: false, locked: false, attemptsLeft: MAX_ATTEMPTS - (data.count || 0), error: 'Login failed. Please try again.' };
+            const error =
+                code === 'auth/too-many-requests'       ? 'Too many attempts. Please wait a few minutes and try again.' :
+                code === 'auth/network-request-failed'  ? 'Network error. Check your connection and try again.' :
+                                                          'Login failed. Please try again.';
+            return { success: false, locked: false, attemptsLeft: Math.max(0, MAX_ATTEMPTS - (lock.data.count || 0)), error, code };
         }
     }, []);
 
-    // logout depends on setRideDetails which is stable (React guarantees setState is stable)
+    // ── Logout ────────────────────────────────────────────────────────────────
+    // Always clears per-user client caches, even if signOut itself fails, so the
+    // next person on a shared device never sees the previous user's rides.
     const logout = useCallback(async () => {
-        await signOut(auth);
-        setRideDetails(null);
+        try {
+            await signOut(auth);
+        } finally {
+            setRideState(null);
+            removeKey(CURRENT_RIDE_KEY, 'session');
+            clearByPrefix('ridex_', 'local');
+            clearAllAttemptData();
+        }
     }, []);
 
     const resetPassword = useCallback(async (email) => {
         await sendPasswordResetEmail(auth, email);
     }, []);
 
-    // saveRide closes over `user` — re-created only when user changes
-    const saveRide = useCallback(async (details) => {
-        if (!user) return;
-        const otp = String(Math.floor(1000 + Math.random() * 9000));
-        const docRef = await addDoc(collection(db, 'rides'), {
-            userId:         user.uid,
-            userName:       user.displayName || user.email,
-            pickup:         details.pickup,
-            pickupLat:      details.pickupLat,
-            pickupLng:      details.pickupLng,
-            destination:    details.destination,
-            destinationLat: details.destinationLat,
-            destinationLng: details.destinationLng,
-            price:          details.price,
-            rideType:       details.rideType,
-            distance:       details.distance,
-            duration:       details.duration,
-            passengers:     details.passengers,
-            status:         'confirmed',
-            driverId:       null,
-            driverName:     null,
-            otp,
-            createdAt:      serverTimestamp(),
-        });
-        return docRef.id;
-    }, [user]);
-
-    const listenToRide = useCallback((rideId, callback) => {
-        return onSnapshot(doc(db, 'rides', rideId), (d) => callback({ id: d.id, ...d.data() }));
+    // ── Refresh the user after e.g. clicking the verification link ───────────
+    // Resolves true when the email is now verified. Throws on auth errors so the
+    // caller can fall back to a hard reload.
+    const refreshUser = useCallback(async () => {
+        const current = auth.currentUser;
+        if (!current) return false;
+        await reload(current);
+        const ok = !!auth.currentUser?.emailVerified;
+        setEmailVerified(ok);
+        return ok;
     }, []);
 
-    // ── useMemo: context value is a stable object; consumers only re-render when
-    //    user or rideDetails actually change — not on unrelated parent renders.
+    // ── Save a booked ride ────────────────────────────────────────────────────
+    // Throws 'NOT_AUTHENTICATED' | 'INVALID_PRICE' | 'TIMEOUT' | Firestore errors.
+    // Uses a pre-generated id so a timed-out create can be compensated with a
+    // queued cancel — no orphaned 'confirmed' ride left for drivers to accept.
+    const saveRide = useCallback(async (details) => {
+        if (!user) throw new Error('NOT_AUTHENTICATED');
+        const price = Number(details?.price);
+        if (!Number.isFinite(price) || price <= 0) throw new Error('INVALID_PRICE');
+
+        const otp = String(Math.floor(1000 + Math.random() * 9000));
+        const ref = doc(collection(db, 'rides'));
+        const customerName = user.displayName || user.email;
+
+        // Both canonical and legacy field names are written so every reader
+        // (driver tabs, admin, history) sees the same values.
+        const payload = {
+            userId:             user.uid,
+            userName:           customerName,
+            customerName,
+            pickup:             details.pickup,
+            pickupAddress:      details.pickup,
+            pickupLat:          details.pickupLat,
+            pickupLng:          details.pickupLng,
+            destination:        details.destination,
+            destinationAddress: details.destination,
+            destinationLat:     details.destinationLat,
+            destinationLng:     details.destinationLng,
+            price,
+            rideType:           details.rideType,
+            distance:           details.distance,
+            duration:           details.duration,
+            passengers:         details.passengers,
+            status:             'confirmed',
+            driverId:           null,
+            driverName:         null,
+            otp,
+            createdAt:          serverTimestamp(),
+        };
+
+        let timer;
+        try {
+            await Promise.race([
+                setDoc(ref, payload),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(new Error('TIMEOUT')), SAVE_RIDE_TIMEOUT_MS);
+                }),
+            ]);
+            return ref.id;
+        } catch (err) {
+            if (err?.message === 'TIMEOUT') {
+                // The create may still land when the connection returns; queue a
+                // cancel behind it (owner may set confirmed → cancelled per rules).
+                updateDoc(ref, { status: 'cancelled' }).catch(() => {});
+            }
+            throw err;
+        } finally {
+            clearTimeout(timer);
+        }
+    }, [user]);
+
+    // ── Live ride listener ────────────────────────────────────────────────────
+    // onData(null) when the document does not exist; onError for permission /
+    // network failures (previously swallowed, leaving the status page frozen).
+    const listenToRide = useCallback((rideId, onData, onError) => {
+        return onSnapshot(
+            doc(db, 'rides', rideId),
+            (d) => {
+                if (!d.exists()) { onData(null); return; }
+                onData({ id: d.id, ...d.data() });
+            },
+            (err) => { if (onError) onError(err); },
+        );
+    }, []);
+
+    // ── Context value — memoised so consumers only re-render on real changes ─
     const value = useMemo(() => ({
         user,
+        emailVerified,
+        loading,
         login,
         register,
         logout,
         resetPassword,
+        refreshUser,
         rideDetails,
         setRideDetails,
         saveRide,
         listenToRide,
-    }), [user, rideDetails, login, register, logout, resetPassword, saveRide, listenToRide]);
+    }), [user, emailVerified, loading, rideDetails, login, register, logout, resetPassword, refreshUser, setRideDetails, saveRide, listenToRide]);
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-black flex items-center justify-center">
+            <div className="min-h-screen min-h-dvh bg-black flex items-center justify-center" role="status" aria-label="Loading">
                 <div className="text-center">
                     <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center mx-auto mb-4">
                         <span className="text-black font-black text-xl">R</span>

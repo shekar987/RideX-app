@@ -4,13 +4,21 @@ rules_version = '2';
 // RideX — Production Firestore Security Rules
 // ═══════════════════════════════════════════════════════════════════════════
 //
+// ADMIN (/admins/{uid})
+//   The platform admin is identified by the existence of a document at
+//   /admins/{uid} (create it once in the Firebase console: Firestore →
+//   admins → document id = the admin user's Auth UID, any/no fields).
+//   Admins may READ every ride and every driver (powers the admin portal).
+//   Admins still cannot write anything from the client — approvals go through
+//   the setDriverStatus Cloud Function. Nobody can write /admins from a client.
+//
 // RIDES (/rides/{rideId})
 //   create — signed-in user only, must own the ride (userId == auth.uid),
 //            must start as status 'confirmed' with driverId null, and must
 //            not pre-set any Cloud-Function-only money field.
 //   read   — the customer who booked it, OR the assigned driver, OR any
 //            APPROVED driver while the ride is still unassigned/'confirmed'
-//            (powers the available-rides list).
+//            (powers the available-rides list), OR the admin.
 //   update (driver accept)   — approved driver takes an unassigned ride:
 //            driverId null → auth.uid, status → 'driver_assigned';
 //            price/userId must be byte-identical to before.
@@ -18,8 +26,14 @@ rules_version = '2';
 //            'driver_assigned' → 'arrived' → 'in_progress'. NEVER to
 //            'completed': completion pays the driver, so it happens only in
 //            the completeRide Cloud Function (Admin SDK bypasses rules).
+//   update (driver GPS mirror) — assigned driver may write ONLY
+//            driverLat / driverLng / driverLocationAt (server time) while the
+//            ride is active. This is how the customer sees the driver move —
+//            the driver document itself stays private to the driver.
 //   update (customer cancel) — ride owner sets status 'confirmed' →
 //            'cancelled' only; price/driverId/userId untouched.
+//   update (customer push token) — ride owner may write ONLY
+//            customerFcmToken (any status) so Cloud Functions can notify them.
 //   money fields — paymentStatus, driverEarnings, platformFee, transferId,
 //            payoutStatus (and paymentIntentId) are Cloud-Function-only.
 //            Every update path rejects any change to them.
@@ -29,16 +43,11 @@ rules_version = '2';
 //   create — only the user creating their OWN doc, and it must be born with
 //            status 'pending' — nobody self-approves at registration. Only
 //            the setDriverStatus Cloud Function (admin-only) flips status.
-//   read   — a driver can read their own doc only.
-//            LIMITATION: customers tracking their assigned driver's live GPS
-//            (RideStatus.jsx) cannot be expressed safely here — Firestore
-//            rules cannot grant field-level reads, and a cross-document
-//            check ("is this driver on one of my active rides?") cannot be
-//            evaluated from the driver doc side without knowing the rideId.
-//            Handled in a later task by mirroring driverLat/driverLng into
-//            the ride document (which the customer CAN read).
+//   read   — a driver can read their own doc; the admin can read all.
+//            Customers never read driver docs — live GPS reaches them via the
+//            ride document (see "driver GPS mirror" above).
 //   update — a driver may change ONLY: name, phone, city, isOnline,
-//            currentLat, currentLng, lastSeen (enforced via
+//            currentLat, currentLng, lastSeen, fcmToken (enforced via
 //            diff().affectedKeys().hasOnly). Everything else — status,
 //            rating, earnings/todayEarnings/weekEarnings, totalRides,
 //            stripeAccountId, payoutsEnabled, chargesEnabled, vehicle*,
@@ -59,10 +68,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // True when the requester is listed in the /admins allow-list
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     // True when the requester has a driver profile that an admin has approved
     function isApprovedDriver(uid) {
       return exists(/databases/$(database)/documents/drivers/$(uid))
         && get(/databases/$(database)/documents/drivers/$(uid)).data.status == 'approved';
+    }
+
+    // True when the update touches nothing outside the given key list
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
 
     // True when the update does not touch any money/payout field. These are
@@ -75,15 +95,23 @@ service cloud.firestore {
       );
     }
 
+    // ── Admin allow-list ─────────────────────────────────────────────────
+    match /admins/{uid} {
+      // A user may check whether THEY are an admin; nobody writes from a client.
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // ── Rides ────────────────────────────────────────────────────────────
     match /rides/{rideId} {
 
-      // Read: ride owner, assigned driver, or any approved driver while the
-      // ride is still open on the marketplace ('confirmed' == unassigned).
+      // Read: ride owner, assigned driver, any approved driver while the ride
+      // is still open on the marketplace ('confirmed' == unassigned), or admin.
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid
         || resource.data.driverId == request.auth.uid
         || (resource.data.status == 'confirmed' && isApprovedDriver(request.auth.uid))
+        || isAdmin()
       );
 
       // Create: customer books their own ride. Must start unassigned and
@@ -125,6 +153,17 @@ service cloud.firestore {
         && request.resource.data.userId == resource.data.userId
         && moneyFieldsUntouched();
 
+      // Update — assigned driver mirrors their GPS position onto the ride so
+      // the customer can watch them approach. Location fields only; the
+      // timestamp must be a serverTimestamp() (== request.time).
+      allow update: if isSignedIn()
+        && resource.data.driverId == request.auth.uid
+        && resource.data.status in ['driver_assigned', 'arrived', 'in_progress']
+        && changedOnly(['driverLat', 'driverLng', 'driverLocationAt'])
+        && request.resource.data.driverLat is number
+        && request.resource.data.driverLng is number
+        && request.resource.data.driverLocationAt == request.time;
+
       // Update — customer cancels their own still-unaccepted ride.
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
@@ -134,6 +173,13 @@ service cloud.firestore {
         && request.resource.data.driverId == resource.data.driverId
         && request.resource.data.price == resource.data.price
         && moneyFieldsUntouched();
+
+      // Update — customer saves their push token on their own ride so
+      // onRideStatusChange / completeRide can notify them.
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && changedOnly(['customerFcmToken'])
+        && request.resource.data.customerFcmToken is string;
 
       // Delete: nobody. Rides are the financial audit trail.
       allow delete: if false;
@@ -149,10 +195,8 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'pending';
 
-      // Read: own document only. (Customer→driver GPS reads are NOT allowed —
-      // see LIMITATION note in the header; will be solved by mirroring the
-      // driver's location into the ride document.)
-      allow read: if isSignedIn() && request.auth.uid == driverId;
+      // Read: own document, or the admin. Customers never read driver docs.
+      allow read: if isSignedIn() && (request.auth.uid == driverId || isAdmin());
 
       // Update: own doc, and ONLY the whitelisted mutable profile/presence
       // fields. status, rating, all earnings counters, totalRides, Stripe
@@ -160,9 +204,8 @@ service cloud.firestore {
       // they change only via Cloud Functions (Admin SDK).
       allow update: if isSignedIn()
         && request.auth.uid == driverId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-             ['name', 'phone', 'city', 'isOnline',
-              'currentLat', 'currentLng', 'lastSeen']);
+        && changedOnly(['name', 'phone', 'city', 'isOnline',
+                        'currentLat', 'currentLng', 'lastSeen', 'fcmToken']);
 
       // Delete: nobody.
       allow delete: if false;

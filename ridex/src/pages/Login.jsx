@@ -1,10 +1,12 @@
 // Login.jsx — Customer login page
 
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
 import { signOut, sendEmailVerification } from 'firebase/auth';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const ring = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
 const ringOffset = 'focus-visible:ring-offset-2 focus-visible:ring-offset-black';
@@ -22,24 +24,25 @@ function Spinner() {
 
 function EyeIcon({ open }) {
     return open ? (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
         </svg>
     ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
         </svg>
     );
 }
 
-function FormField({ id, label, type, value, onChange, placeholder, autoComplete, maxLength, disabled, rightElement }) {
+function FormField({ id, label, type, value, onChange, placeholder, autoComplete, maxLength, disabled, inputMode, rightElement }) {
     return (
         <div>
             <label htmlFor={id} className="block text-xs text-gray-400 font-medium mb-2">
                 {label}
             </label>
             <div className="relative">
+                {/* text-base (16px): anything smaller makes iOS Safari zoom the page on focus */}
                 <input
                     id={id}
                     type={type}
@@ -47,14 +50,15 @@ function FormField({ id, label, type, value, onChange, placeholder, autoComplete
                     onChange={onChange}
                     placeholder={placeholder}
                     autoComplete={autoComplete}
+                    inputMode={inputMode}
                     maxLength={maxLength}
                     disabled={disabled}
                     className={`w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700
-                        focus:outline-none focus:border-yellow-400 transition text-sm disabled:opacity-50
-                        ${rightElement ? 'pr-11' : ''}`}
+                        focus:outline-none focus:border-yellow-400 transition text-base disabled:opacity-50
+                        ${rightElement ? 'pr-12' : ''}`}
                 />
                 {rightElement && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2">
                         {rightElement}
                     </div>
                 )}
@@ -69,9 +73,10 @@ function AuthPageHeader() {
     return (
         <div className="w-full max-w-md mb-6">
             <button
+                type="button"
                 onClick={() => navigate('/')}
                 aria-label="Back to home"
-                className={`flex items-center gap-1.5 text-gray-400 hover:text-white transition text-sm mb-6 ${ring} rounded`}
+                className={`flex items-center gap-1.5 text-gray-400 hover:text-white transition text-sm mb-4 px-2 py-2 -ml-2 ${ring} rounded`}
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -79,12 +84,12 @@ function AuthPageHeader() {
                 Back
             </button>
 
-            <a href="/" aria-label="RideX — home" className={`flex items-center gap-2 w-fit rounded-lg ${ring}`}>
+            <Link to="/" aria-label="RideX — home" className={`flex items-center gap-2 w-fit rounded-lg ${ring}`}>
                 <div className="w-9 h-9 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
                     <span className="text-black font-black">R</span>
                 </div>
                 <span className="text-2xl font-black">RideX</span>
-            </a>
+            </Link>
         </div>
     );
 }
@@ -92,6 +97,7 @@ function AuthPageHeader() {
 // ── Main component ────────────────────────────────────────────────────────────
 function Login() {
     const navigate = useNavigate();
+    const { state } = useLocation();
     const { login, resetPassword } = useAuth();
 
     const [email,            setEmail]            = useState('');
@@ -99,95 +105,131 @@ function Login() {
     const [showPassword,     setShowPassword]     = useState(false);
     const [error,            setError]            = useState('');
     const [loading,          setLoading]          = useState(false);
+    const [resetLoading,     setResetLoading]     = useState(false);
     const [resetSent,        setResetSent]        = useState(false);
     const [lockoutSeconds,   setLockoutSeconds]   = useState(0);
     const [showResend,       setShowResend]       = useState(false);
+    const [resending,        setResending]        = useState(false);
     const [verificationSent, setVerificationSent] = useState(false);
 
     // Holds the signed-in-but-unverified User so the resend handler can call
     // sendEmailVerification after we've signed out of the session.
     const pendingUserRef = useRef(null);
 
+    // Where to go after login — the page the guard bounced us from, else /book
+    const destination = state?.from?.pathname || '/book';
+
+    // Lockout countdown — the lock used to stay on screen forever
+    useEffect(() => {
+        if (lockoutSeconds <= 0) return undefined;
+        const timer = setInterval(() => {
+            setLockoutSeconds(s => {
+                if (s <= 1) { setError(''); return 0; }
+                return s - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [lockoutSeconds > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const handleLogin = async (e) => {
         e?.preventDefault();
+        if (loading) return;
         const trimmedEmail = email.trim();
         if (!trimmedEmail || !password) { setError('Please enter your email and password.'); return; }
+        if (!EMAIL_RE.test(trimmedEmail)) { setError('Please enter a valid email address.'); return; }
 
         setLoading(true);
         setError('');
         setShowResend(false);
         setVerificationSent(false);
 
-        const result = await login(trimmedEmail, password);
-        setLoading(false);
+        try {
+            const result = await login(trimmedEmail, password);
 
-        if (result.success) {
-            const currentUser = auth.currentUser;
+            if (result.success) {
+                const currentUser = auth.currentUser;
 
-            if (currentUser) {
-                await currentUser.reload();
-                if (!currentUser.emailVerified) {
-                    pendingUserRef.current = currentUser;
-                    await signOut(auth);
-                    setShowResend(true);
+                if (currentUser) {
+                    try { await currentUser.reload(); } catch { /* use the flag we already have */ }
+                    if (!currentUser.emailVerified) {
+                        pendingUserRef.current = currentUser;
+                        try { await signOut(auth); } catch { /* guard still blocks unverified users */ }
+                        setShowResend(true);
+                        setError('Your email is not verified. Check your inbox and click the verification link.');
+                        return;
+                    }
+                } else if (!result.emailVerified) {
                     setError('Your email is not verified. Check your inbox and click the verification link.');
                     return;
                 }
-            } else if (!result.emailVerified) {
-                setError('Your email is not verified. Check your inbox and click the verification link.');
+
+                navigate(destination, { replace: true });
                 return;
             }
 
-            navigate('/book');
-            return;
-        }
+            if (result.locked) {
+                const secsLeft = Math.max(1, Math.ceil((result.lockedUntil - Date.now()) / 1000));
+                setLockoutSeconds(secsLeft);
+                setError(`Too many failed attempts. Please wait ${Math.ceil(secsLeft / 60)} minute${secsLeft > 60 ? 's' : ''} before trying again.`);
+                return;
+            }
 
-        if (result.locked) {
-            const secsLeft = Math.ceil((result.lockedUntil - Date.now()) / 1000);
-            setLockoutSeconds(secsLeft);
-            setError(`Too many failed attempts. Please wait ${Math.ceil(secsLeft / 60)} minute${secsLeft > 60 ? 's' : ''} before trying again.`);
-            return;
+            const attemptsMsg = result.attemptsLeft > 0 && result.attemptsLeft < 5
+                ? ` ${result.attemptsLeft} attempt${result.attemptsLeft !== 1 ? 's' : ''} remaining.`
+                : '';
+            setError((result.error || 'Login failed.') + attemptsMsg);
+        } catch {
+            setError('Login failed. Please check your connection and try again.');
+        } finally {
+            setLoading(false);
         }
-
-        const attemptsMsg = result.attemptsLeft > 0
-            ? ` ${result.attemptsLeft} attempt${result.attemptsLeft !== 1 ? 's' : ''} remaining.`
-            : '';
-        setError((result.error || 'Login failed.') + attemptsMsg);
     };
 
     const handleResend = async () => {
         const user = pendingUserRef.current;
         if (!user) { setError('Please log in again to resend the verification email.'); return; }
+        if (resending) return;
+        setResending(true);
         try {
             await sendEmailVerification(user);
             setVerificationSent(true);
             setError('');
             setShowResend(false);
-        } catch {
-            setError('Could not resend. Please try logging in again.');
-            setShowResend(false);
+        } catch (err) {
+            // Keep the button so they can retry once the limit lifts
+            setError(err?.code === 'auth/too-many-requests'
+                ? 'Too many requests — wait a few minutes, then try resending again.'
+                : 'Could not resend. Please try logging in again.');
+        } finally {
+            setResending(false);
         }
     };
 
     const handleReset = async () => {
+        if (resetLoading) return;
         const trimmedEmail = email.trim();
         if (!trimmedEmail) { setError('Enter your email address first, then click forgot password.'); return; }
+        setResetLoading(true);
         try {
             await resetPassword(trimmedEmail);
             setResetSent(true);
             setError('');
-        } catch {
-            setError('Could not send reset email. Check the address and try again.');
+        } catch (err) {
+            setError(err?.code === 'auth/too-many-requests'
+                ? 'Too many reset requests — please wait a few minutes.'
+                : 'Could not send reset email. Check the address and try again.');
+        } finally {
+            setResetLoading(false);
         }
     };
 
     const isLocked = lockoutSeconds > 0;
 
     return (
-        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-4 py-12">
+        <div className="min-h-screen min-h-dvh bg-black text-white flex flex-col items-center justify-center px-4 py-8 sm:py-12 pb-safe">
             <AuthPageHeader />
 
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-md">
+            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 w-full max-w-md">
                 {/* Page heading — h1 since this is the primary content */}
                 <h1 className="text-2xl font-black mb-1">Welcome back</h1>
                 <p className="text-gray-500 text-sm mb-6">Log in to your RideX account</p>
@@ -207,8 +249,13 @@ function Login() {
                         <div role="alert" className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
                             <p className="text-red-400 text-sm">{error}</p>
                             {showResend && (
-                                <button onClick={handleResend} type="button" className={`mt-2 text-xs text-yellow-400 hover:underline ${ring} rounded`}>
-                                    Resend verification email
+                                <button
+                                    onClick={handleResend}
+                                    type="button"
+                                    disabled={resending}
+                                    className={`mt-1 text-sm text-yellow-400 hover:underline px-2 py-2 -ml-2 disabled:opacity-60 ${ring} rounded`}
+                                >
+                                    {resending ? 'Sending…' : 'Resend verification email'}
                                 </button>
                             )}
                         </div>
@@ -232,6 +279,7 @@ function Login() {
                         id="login-email"
                         label="Email address"
                         type="email"
+                        inputMode="email"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
                         placeholder="your@email.com"
@@ -255,7 +303,7 @@ function Login() {
                                 type="button"
                                 onClick={() => setShowPassword(v => !v)}
                                 aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                className={`text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+                                className={`p-2.5 text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
                             >
                                 <EyeIcon open={showPassword} />
                             </button>
@@ -266,9 +314,10 @@ function Login() {
                         <button
                             type="button"
                             onClick={handleReset}
-                            className={`text-xs text-yellow-400 hover:underline ${ring} rounded`}
+                            disabled={resetLoading}
+                            className={`text-sm text-yellow-400 hover:underline px-2 py-2 -mr-2 disabled:opacity-60 ${ring} rounded`}
                         >
-                            Forgot password?
+                            {resetLoading ? 'Sending…' : 'Forgot password?'}
                         </button>
                     </div>
 
@@ -280,15 +329,16 @@ function Login() {
                             flex items-center justify-center ${ring} ${ringOffset}`}
                     >
                         {loading && <Spinner />}
-                        {loading ? 'Logging in…' : isLocked ? 'Account locked' : 'Log In'}
+                        {loading ? 'Logging in…' : isLocked ? `Account locked (${Math.ceil(lockoutSeconds / 60)} min)` : 'Log In'}
                     </button>
                 </form>
 
                 <p className="text-center text-gray-500 text-sm mt-5">
                     Don't have an account?{' '}
                     <button
+                        type="button"
                         onClick={() => navigate('/register')}
-                        className={`text-yellow-400 font-semibold hover:underline ${ring} rounded`}
+                        className={`inline-block text-yellow-400 font-semibold hover:underline px-1 py-2 ${ring} rounded`}
                     >
                         Sign up free
                     </button>

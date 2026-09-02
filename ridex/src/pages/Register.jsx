@@ -1,16 +1,19 @@
 // Register.jsx — Customer registration page
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { sendEmailVerification } from 'firebase/auth';
+import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
-const NAME_RE              = /^[\p{L}\s'-]+$/u;
+// Letters (any script), spaces, hyphens, apostrophes and periods ("Dr. Smith")
+const NAME_RE              = /^[\p{L}\s'.-]+$/u;
 const EMAIL_RE             = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_LETTER_RE   = /[a-zA-Z]/;
-const PASSWORD_SYMBOL_RE   = /[\d!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/;
+const PASSWORD_SYMBOL_RE   = /[^a-zA-Z\s]/; // any digit or symbol — including £, which the old list rejected
 
 function validatePassword(pw) {
-    if (pw.length < 8)                   return 'Password must be at least 8 characters.';
+    if (pw.trim().length < 8)            return 'Password must be at least 8 characters.';
     if (!PASSWORD_LETTER_RE.test(pw))    return 'Password must include at least one letter.';
     if (!PASSWORD_SYMBOL_RE.test(pw))    return 'Password must include at least one number or symbol.';
     return null;
@@ -32,24 +35,25 @@ function Spinner() {
 
 function EyeIcon({ open }) {
     return open ? (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
         </svg>
     ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
         </svg>
     );
 }
 
-function FormField({ id, label, type, value, onChange, placeholder, autoComplete, maxLength, hint, rightElement }) {
+function FormField({ id, label, type, value, onChange, placeholder, autoComplete, inputMode, maxLength, hint, rightElement }) {
     return (
         <div>
             <label htmlFor={id} className="block text-xs text-gray-400 font-medium mb-2">
                 {label}
             </label>
             <div className="relative">
+                {/* text-base (16px): anything smaller makes iOS Safari zoom the page on focus */}
                 <input
                     id={id}
                     type={type}
@@ -57,13 +61,14 @@ function FormField({ id, label, type, value, onChange, placeholder, autoComplete
                     onChange={onChange}
                     placeholder={placeholder}
                     autoComplete={autoComplete}
+                    inputMode={inputMode}
                     maxLength={maxLength}
                     className={`w-full px-4 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-700
-                        focus:outline-none focus:border-yellow-400 transition text-sm
-                        ${rightElement ? 'pr-11' : ''}`}
+                        focus:outline-none focus:border-yellow-400 transition text-base
+                        ${rightElement ? 'pr-12' : ''}`}
                 />
                 {rightElement && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2">
                         {rightElement}
                     </div>
                 )}
@@ -79,9 +84,10 @@ function AuthPageHeader() {
     return (
         <div className="w-full max-w-md mb-6">
             <button
+                type="button"
                 onClick={() => navigate('/')}
                 aria-label="Back to home"
-                className={`flex items-center gap-1.5 text-gray-400 hover:text-white transition text-sm mb-6 ${ring} rounded`}
+                className={`flex items-center gap-1.5 text-gray-400 hover:text-white transition text-sm mb-4 px-2 py-2 -ml-2 ${ring} rounded`}
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -89,23 +95,42 @@ function AuthPageHeader() {
                 Back
             </button>
 
-            <a href="/" aria-label="RideX — home" className={`flex items-center gap-2 w-fit rounded-lg ${ring}`}>
+            <Link to="/" aria-label="RideX — home" className={`flex items-center gap-2 w-fit rounded-lg ${ring}`}>
                 <div className="w-9 h-9 bg-yellow-400 rounded-full flex items-center justify-center" aria-hidden="true">
                     <span className="text-black font-black">R</span>
                 </div>
                 <span className="text-2xl font-black">RideX</span>
-            </a>
+            </Link>
         </div>
     );
 }
 
 // ── Success state shown after account creation ────────────────────────────────
-function VerificationSent({ email, onGoToLogin }) {
+function VerificationSent({ email, verificationSent, onGoToLogin }) {
+    const [resending, setResending] = useState(false);
+    const [notice,    setNotice]    = useState(verificationSent ? '' : 'We could not send the email automatically. Tap "Resend" below.');
+
+    const resend = async () => {
+        if (resending) return;
+        setResending(true);
+        try {
+            if (!auth.currentUser) throw new Error('no-user');
+            await sendEmailVerification(auth.currentUser);
+            setNotice('Verification email sent — check your inbox and spam folder.');
+        } catch (err) {
+            setNotice(err?.code === 'auth/too-many-requests'
+                ? 'Too many requests — wait a few minutes and try again.'
+                : 'Could not send the email. Go to Login and use "Resend verification email".');
+        } finally {
+            setResending(false);
+        }
+    };
+
     return (
         <div className="text-center py-4">
             {/* SVG envelope instead of 📧 emoji */}
-            <div className="w-16 h-16 bg-yellow-400/10 border border-yellow-400/20 rounded-full flex items-center justify-center mx-auto mb-5">
-                <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75} aria-hidden="true">
+            <div className="w-16 h-16 bg-yellow-400/10 border border-yellow-400/20 rounded-full flex items-center justify-center mx-auto mb-5" aria-hidden="true">
+                <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
             </div>
@@ -114,16 +139,31 @@ function VerificationSent({ email, onGoToLogin }) {
             <p className="text-gray-400 text-sm mb-2 leading-relaxed">
                 We sent a verification link to
             </p>
-            <p className="text-yellow-400 font-semibold text-sm mb-6 break-all">{email}</p>
-            <p className="text-gray-500 text-xs mb-8 leading-relaxed">
+            <p className="text-yellow-400 font-semibold text-sm mb-6 break-words">{email}</p>
+            <p className="text-gray-500 text-xs mb-6 leading-relaxed">
                 Click the link in the email to activate your account, then log in below.
             </p>
 
+            <div aria-live="polite" aria-atomic="true">
+                {notice && (
+                    <p role="status" className="text-xs text-gray-300 bg-gray-800/60 rounded-xl px-4 py-3 mb-4">{notice}</p>
+                )}
+            </div>
+
             <button
+                type="button"
                 onClick={onGoToLogin}
                 className={`w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 active:bg-yellow-500 transition ${ring} ${ringOffset}`}
             >
                 Go to Login
+            </button>
+            <button
+                type="button"
+                onClick={resend}
+                disabled={resending}
+                className={`w-full mt-3 py-3 border border-gray-700 text-gray-400 font-bold rounded-xl hover:border-gray-500 transition disabled:opacity-60 ${ring}`}
+            >
+                {resending ? 'Sending…' : 'Resend verification email'}
             </button>
         </div>
     );
@@ -140,12 +180,13 @@ function Register() {
     const [showPassword, setShowPassword] = useState(false);
     const [error,        setError]        = useState('');
     const [loading,      setLoading]      = useState(false);
-    const [verified,     setVerified]     = useState(false);
+    const [done,         setDone]         = useState(null); // { email, verificationSent }
 
     const handleRegister = async (e) => {
         e?.preventDefault();
+        if (loading) return;
         const trimmedName  = name.trim();
-        const trimmedEmail = email.trim();
+        const trimmedEmail = email.trim().toLowerCase();
 
         if (!trimmedName || !trimmedEmail || !password) { setError('Please fill in all fields.'); return; }
         if (trimmedName.length < 2)          { setError('Name must be at least 2 characters.'); return; }
@@ -159,26 +200,29 @@ function Register() {
         setError('');
 
         try {
-            await register(trimmedName, trimmedEmail, password);
-            setVerified(true);
+            const result = await register(trimmedName, trimmedEmail, password);
+            setDone({ email: trimmedEmail, verificationSent: result?.verificationSent !== false });
         } catch (err) {
             setError(
-                err.code === 'auth/email-already-in-use'
-                    ? 'An account with this email already exists. Try logging in instead.'
-                    : 'Registration failed. Please try again.'
+                err?.code === 'auth/email-already-in-use'   ? 'An account with this email already exists. Try logging in instead.' :
+                err?.code === 'auth/invalid-email'          ? 'Please enter a valid email address.' :
+                err?.code === 'auth/weak-password'          ? 'Please choose a stronger password.' :
+                err?.code === 'auth/network-request-failed' ? 'Network error. Check your connection and try again.' :
+                err?.code === 'auth/too-many-requests'      ? 'Too many attempts. Please wait a few minutes and try again.' :
+                                                              'Registration failed. Please try again.'
             );
+        } finally {
+            setLoading(false);
         }
-
-        setLoading(false);
     };
 
     return (
-        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-4 py-12">
+        <div className="min-h-screen min-h-dvh bg-black text-white flex flex-col items-center justify-center px-4 py-8 sm:py-12 pb-safe">
             <AuthPageHeader />
 
-            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 w-full max-w-md">
-                {verified ? (
-                    <VerificationSent email={email} onGoToLogin={() => navigate('/login')} />
+            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 w-full max-w-md">
+                {done ? (
+                    <VerificationSent email={done.email} verificationSent={done.verificationSent} onGoToLogin={() => navigate('/login')} />
                 ) : (
                     <>
                         <h1 className="text-2xl font-black mb-1">Create account</h1>
@@ -208,6 +252,7 @@ function Register() {
                                 id="reg-email"
                                 label="Email address"
                                 type="email"
+                                inputMode="email"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
                                 placeholder="your@email.com"
@@ -230,7 +275,7 @@ function Register() {
                                         type="button"
                                         onClick={() => setShowPassword(v => !v)}
                                         aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                        className={`text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+                                        className={`p-2.5 text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
                                     >
                                         <EyeIcon open={showPassword} />
                                     </button>
@@ -252,8 +297,9 @@ function Register() {
                         <p className="text-center text-gray-500 text-sm mt-5">
                             Already have an account?{' '}
                             <button
+                                type="button"
                                 onClick={() => navigate('/login')}
-                                className={`text-yellow-400 font-semibold hover:underline ${ring} rounded`}
+                                className={`inline-block text-yellow-400 font-semibold hover:underline px-1 py-2 ${ring} rounded`}
                             >
                                 Log in
                             </button>

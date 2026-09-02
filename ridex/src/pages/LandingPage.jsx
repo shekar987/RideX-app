@@ -1,8 +1,9 @@
 // LandingPage.jsx — RideX marketing homepage
 // Semantic landmarks: header / main (hero + features + driver) / footer
-// Mobile-first: nav collapses "Drive with us" below sm breakpoint
+// Mobile-first: nav collapses "Drive with us" below sm breakpoint (it stays
+// reachable via the "Become a Driver" CTA and the footer link).
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 // ── Feature icons — SVG instead of emoji for cross-platform consistency ──────
 function IconBolt() {
@@ -55,17 +56,17 @@ function LandingPage() {
     const navigate = useNavigate();
 
     return (
-        <div className="min-h-screen bg-black text-white overflow-x-hidden flex flex-col">
+        <div className="min-h-screen min-h-dvh bg-black text-white overflow-x-hidden flex flex-col">
 
             {/* ── Header ─────────────────────────────────────────────────── */}
             <header>
                 <nav
                     aria-label="Main navigation"
-                    className="flex justify-between items-center px-5 md:px-8 py-4 border-b border-gray-800"
+                    className="flex justify-between items-center gap-3 px-5 md:px-8 py-3 sm:py-4 border-b border-gray-800"
                 >
                     {/* Brand — not a heading; the hero h1 is the page title */}
-                    <a
-                        href="/"
+                    <Link
+                        to="/"
                         aria-label="RideX home"
                         className={`flex items-center gap-2 rounded-lg ${ring}`}
                     >
@@ -73,26 +74,29 @@ function LandingPage() {
                             <span className="text-black font-black text-sm">R</span>
                         </div>
                         <span className="text-xl font-black tracking-tight">RideX</span>
-                    </a>
+                    </Link>
 
                     {/* Nav actions */}
                     <div className="flex gap-2 items-center">
-                        {/* Hidden on mobile — avoid overflow on 375px */}
+                        {/* Hidden on phones — avoids overflow at 320–375px */}
                         <button
+                            type="button"
                             onClick={() => navigate('/driver/login')}
-                            className={`hidden sm:block px-4 py-2 text-sm text-gray-400 hover:text-white transition rounded-lg ${ring}`}
+                            className={`hidden sm:block px-4 py-2.5 sm:py-2 text-sm text-gray-400 hover:text-white transition rounded-lg ${ring}`}
                         >
                             Drive with us
                         </button>
                         <button
+                            type="button"
                             onClick={() => navigate('/login')}
-                            className={`px-4 py-2 text-sm text-white border border-gray-700 rounded-full hover:border-white transition ${ring}`}
+                            className={`px-4 py-2.5 sm:py-2 text-sm text-white border border-gray-700 rounded-full hover:border-white transition ${ring}`}
                         >
                             Log in
                         </button>
                         <button
+                            type="button"
                             onClick={() => navigate('/register')}
-                            className={`px-4 py-2 text-sm bg-yellow-400 text-black rounded-full font-bold hover:bg-yellow-300 active:bg-yellow-500 transition ${ring} ${ringOffset}`}
+                            className={`px-4 py-2.5 sm:py-2 text-sm bg-yellow-400 text-black rounded-full font-bold hover:bg-yellow-300 active:bg-yellow-500 transition ${ring} ${ringOffset}`}
                         >
                             Sign up
                         </button>
@@ -106,7 +110,7 @@ function LandingPage() {
                 {/* ── Hero ── */}
                 <section
                     aria-labelledby="hero-heading"
-                    className="flex flex-col lg:flex-row items-center justify-between px-5 md:px-8 lg:px-16 pt-14 pb-10 max-w-7xl mx-auto gap-12"
+                    className="flex flex-col lg:flex-row items-center justify-between px-5 md:px-8 lg:px-16 pt-10 sm:pt-14 pb-10 max-w-7xl mx-auto gap-10 lg:gap-12"
                 >
                     {/* Left: copy */}
                     <div className="flex-1 max-w-xl w-full">
@@ -119,24 +123,26 @@ function LandingPage() {
                         {/* Primary heading — h1, not h2 */}
                         <h1
                             id="hero-heading"
-                            className="text-5xl lg:text-6xl font-black leading-tight mb-6"
+                            className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6"
                         >
                             Your ride,<br />
                             <span className="text-yellow-400">on demand.</span>
                         </h1>
 
-                        <p className="text-gray-400 text-lg mb-8 leading-relaxed">
+                        <p className="text-gray-400 text-base sm:text-lg mb-8 leading-relaxed">
                             Book a ride in seconds. Track your driver in real time. Pay seamlessly — no cash needed.
                         </p>
 
                         <div className="flex flex-wrap gap-3 mb-8">
                             <button
+                                type="button"
                                 onClick={() => navigate('/register')}
                                 className={`px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 active:bg-yellow-500 transition shadow-lg shadow-yellow-400/20 ${ring} ${ringOffset}`}
                             >
                                 Book a ride →
                             </button>
                             <button
+                                type="button"
                                 onClick={() => navigate('/login')}
                                 className={`px-8 py-4 bg-gray-900 text-white text-base font-semibold rounded-full hover:bg-gray-800 transition border border-gray-700 ${ring}`}
                             >
@@ -145,26 +151,26 @@ function LandingPage() {
                         </div>
 
                         {/* Social proof stats */}
-                        <div className="grid grid-cols-3 gap-4 border-t border-gray-800 pt-6">
-                            <div>
-                                <p className="text-2xl font-black text-yellow-400">50K+</p>
-                                <p className="text-sm text-gray-500">Rides completed</p>
+                        <div className="grid grid-cols-3 gap-2 sm:gap-4 border-t border-gray-800 pt-6">
+                            <div className="min-w-0">
+                                <p className="text-xl sm:text-2xl font-black text-yellow-400">50K+</p>
+                                <p className="text-xs sm:text-sm text-gray-500">Rides completed</p>
                             </div>
-                            <div>
-                                <p className="text-2xl font-black text-yellow-400">4.9<span aria-hidden="true">★</span></p>
-                                <p className="text-sm text-gray-500">Average rating</p>
+                            <div className="min-w-0">
+                                <p className="text-xl sm:text-2xl font-black text-yellow-400">4.9<span aria-hidden="true">★</span></p>
+                                <p className="text-xs sm:text-sm text-gray-500">Average rating</p>
                             </div>
-                            <div>
-                                <p className="text-2xl font-black text-yellow-400">3 min</p>
-                                <p className="text-sm text-gray-500">Avg pickup time</p>
+                            <div className="min-w-0">
+                                <p className="text-xl sm:text-2xl font-black text-yellow-400">3 min</p>
+                                <p className="text-xs sm:text-sm text-gray-500">Avg pickup time</p>
                             </div>
                         </div>
                     </div>
 
                     {/* Right: map illustration — decorative, hidden from assistive tech */}
-                    <div className="flex-1 flex justify-center lg:justify-end" aria-hidden="true">
-                        <div className="relative w-72 sm:w-80">
-                            <div className="w-full h-96 bg-gray-900 rounded-3xl overflow-hidden border border-gray-800 relative">
+                    <div className="flex-1 flex justify-center lg:justify-end w-full" aria-hidden="true">
+                        <div className="relative w-full max-w-[18rem] sm:max-w-xs">
+                            <div className="w-full h-80 sm:h-96 bg-gray-900 rounded-3xl overflow-hidden border border-gray-800 relative">
                                 {/* Map grid */}
                                 <div className="absolute inset-0 opacity-20 pointer-events-none">
                                     {[...Array(8)].map((_, i) => (
@@ -177,8 +183,8 @@ function LandingPage() {
                                     ))}
                                 </div>
 
-                                {/* Route line + markers */}
-                                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 384">
+                                {/* Route line + markers — scales with the card (preserveAspectRatio none) */}
+                                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 384" preserveAspectRatio="none">
                                     <path
                                         d="M 80 300 Q 120 200 160 180 Q 200 160 240 100"
                                         stroke="#FACC15" strokeWidth="3" fill="none" strokeDasharray="8 4"
@@ -190,6 +196,11 @@ function LandingPage() {
                                     <circle cx="160" cy="180" r="10" fill="#FACC15" />
                                     <circle cx="160" cy="180" r="18" fill="#FACC15" fillOpacity="0.2" />
                                 </svg>
+
+                                {/* Nearby chip — inside the card so it never causes horizontal overflow */}
+                                <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
+                                    Driver nearby
+                                </div>
 
                                 {/* Driver info overlay */}
                                 <div className="absolute bottom-4 left-4 right-4 bg-black/90 backdrop-blur-sm rounded-2xl p-4 border border-gray-800">
@@ -211,11 +222,6 @@ function LandingPage() {
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Nearby chip */}
-                            <div className="absolute -top-3 -right-3 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
-                                Driver nearby
-                            </div>
                         </div>
                     </div>
                 </section>
@@ -226,7 +232,7 @@ function LandingPage() {
                         {FEATURES.map(({ Icon, title, desc }, i) => (
                             <div
                                 key={title}
-                                className={`px-8 md:px-10 py-8 ${i < FEATURES.length - 1 ? 'border-b md:border-b-0 md:border-r border-gray-800' : ''}`}
+                                className={`px-5 md:px-10 py-6 sm:py-8 ${i < FEATURES.length - 1 ? 'border-b md:border-b-0 md:border-r border-gray-800' : ''}`}
                             >
                                 <div className="w-10 h-10 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-center text-yellow-400 mb-4">
                                     <Icon />
@@ -240,24 +246,24 @@ function LandingPage() {
 
                 {/* ── Driver acquisition ── */}
                 <section aria-labelledby="driver-heading" className="border-t border-gray-800">
-                    <div className="max-w-7xl mx-auto px-5 md:px-8 lg:px-16 py-16 flex flex-col lg:flex-row items-center justify-between gap-12">
+                    <div className="max-w-7xl mx-auto px-5 md:px-8 lg:px-16 py-12 sm:py-16 flex flex-col lg:flex-row items-center justify-between gap-10 lg:gap-12">
 
                         {/* Left: copy */}
                         <div className="flex-1 max-w-xl w-full">
                             <p className="text-yellow-400 text-sm font-bold uppercase tracking-widest mb-3">For Drivers</p>
-                            <h2 id="driver-heading" className="text-4xl lg:text-5xl font-black leading-tight mb-4">
+                            <h2 id="driver-heading" className="text-3xl sm:text-4xl lg:text-5xl font-black leading-tight mb-4">
                                 Earn on your<br />
                                 <span className="text-yellow-400">own schedule.</span>
                             </h2>
-                            <p className="text-gray-400 text-lg mb-8 leading-relaxed">
+                            <p className="text-gray-400 text-base sm:text-lg mb-8 leading-relaxed">
                                 Join thousands of drivers earning with RideX. Set your own hours, keep more of your fare, and get paid weekly.
                             </p>
 
-                            {/* Driver perk stats */}
-                            <div className="grid grid-cols-3 gap-3 mb-8">
+                            {/* Driver perk stats — tight gaps and a smaller phone font so "Flexible" fits a 3-up tile */}
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-8">
                                 {DRIVER_STATS.map(({ stat, label }) => (
-                                    <div key={label} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                                        <p className="text-white font-black text-lg">{stat}</p>
+                                    <div key={label} className="bg-gray-900 border border-gray-800 rounded-2xl p-3 sm:p-4 text-center min-w-0">
+                                        <p className="text-white font-black text-base sm:text-lg break-words">{stat}</p>
                                         <p className="text-gray-500 text-xs mt-0.5">{label}</p>
                                     </div>
                                 ))}
@@ -265,12 +271,14 @@ function LandingPage() {
 
                             <div className="flex flex-wrap gap-3">
                                 <button
+                                    type="button"
                                     onClick={() => navigate('/driver/login?tab=register')}
                                     className={`px-8 py-4 bg-yellow-400 text-black text-base font-black rounded-full hover:bg-yellow-300 active:bg-yellow-500 transition shadow-lg shadow-yellow-400/20 ${ring} ${ringOffset}`}
                                 >
                                     Become a Driver →
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => navigate('/driver/login')}
                                     className={`px-8 py-4 bg-gray-900 text-white text-base font-semibold rounded-full hover:bg-gray-800 transition border border-gray-700 ${ring}`}
                                 >
@@ -280,8 +288,8 @@ function LandingPage() {
                         </div>
 
                         {/* Right: driver portal preview card — decorative */}
-                        <div className="flex-1 flex justify-center lg:justify-end" aria-hidden="true">
-                            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 w-full max-w-sm">
+                        <div className="flex-1 flex justify-center lg:justify-end w-full" aria-hidden="true">
+                            <div className="bg-gray-900 border border-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-sm">
                                 <div className="flex items-center gap-4 mb-6">
                                     <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center flex-shrink-0">
                                         {/* Car icon instead of emoji */}
@@ -298,7 +306,7 @@ function LandingPage() {
                                 </div>
 
                                 {PORTAL_ROWS.map(({ label, value, valueClass, dot }) => (
-                                    <div key={label} className="flex justify-between items-center py-3 border-b border-gray-800 last:border-0">
+                                    <div key={label} className="flex justify-between items-center gap-3 py-3 border-b border-gray-800 last:border-0">
                                         <span className="text-gray-400 text-sm">{label}</span>
                                         <span className={`font-bold text-sm flex items-center gap-1.5 ${valueClass}`}>
                                             {dot && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />}
@@ -313,7 +321,7 @@ function LandingPage() {
             </main>
 
             {/* ── Footer ─────────────────────────────────────────────────── */}
-            <footer className="border-t border-gray-800 px-5 md:px-8 py-5">
+            <footer className="border-t border-gray-800 px-5 md:px-8 py-5 pb-safe">
                 <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div className="flex items-center gap-2" aria-hidden="true">
                         <div className="w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center">
@@ -326,19 +334,27 @@ function LandingPage() {
                         &copy; {new Date().getFullYear()} RideX. All rights reserved.
                     </p>
 
-                    <nav aria-label="Footer links" className="flex gap-4">
+                    <nav aria-label="Footer links" className="flex gap-1">
                         <button
+                            type="button"
                             onClick={() => navigate('/driver/login?tab=register')}
-                            className={`text-gray-500 hover:text-gray-300 text-xs transition rounded ${ring}`}
+                            className={`text-gray-500 hover:text-gray-300 text-xs transition rounded px-3 py-2 ${ring}`}
                         >
                             Drive with us
                         </button>
                         <button
+                            type="button"
                             onClick={() => navigate('/login')}
-                            className={`text-gray-500 hover:text-gray-300 text-xs transition rounded ${ring}`}
+                            className={`text-gray-500 hover:text-gray-300 text-xs transition rounded px-3 py-2 ${ring}`}
                         >
                             Sign in
                         </button>
+                        <Link to="/terms" className={`text-gray-500 hover:text-gray-300 text-xs transition rounded px-3 py-2 ${ring}`}>
+                            Terms
+                        </Link>
+                        <Link to="/privacy" className={`text-gray-500 hover:text-gray-300 text-xs transition rounded px-3 py-2 ${ring}`}>
+                            Privacy
+                        </Link>
                     </nav>
                 </div>
             </footer>

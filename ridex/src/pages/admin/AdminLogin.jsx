@@ -1,12 +1,15 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../firebase';
-
-const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL;
+import { isAdminUser } from '../../utils/admin';
+import { checkLockout, recordFailedAttempt, clearAttemptData } from '../../utils/loginAttempts';
 
 const ring       = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400';
 const ringOffset = 'focus-visible:ring-offset-2 focus-visible:ring-offset-black';
+const AUTH_TIMEOUT_MS = 5000;
+
+const CREDENTIAL_ERROR_CODES = ['auth/wrong-password', 'auth/user-not-found', 'auth/invalid-credential', 'auth/invalid-email'];
 
 function EyeIcon({ open }) {
   return open ? (
@@ -23,70 +26,109 @@ function EyeIcon({ open }) {
 
 export default function AdminLogin() {
   const navigate = useNavigate();
+  const { state } = useLocation();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [checking, setChecking] = useState(true);
   const [error,    setError]    = useState('');
+  const [lockSecs, setLockSecs] = useState(0);
+  const submittingRef = useRef(false);
 
-  // Redirect to dashboard if already logged in as admin
+  const destination = state?.from?.pathname || '/admin/dashboard';
+
+  // Redirect to dashboard if already logged in as admin. The auth listener owns
+  // the redirect — handleLogin never navigates itself (no double history entry).
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, user => {
-      if (user && ADMIN_EMAIL && user.email === ADMIN_EMAIL) {
-        navigate('/admin/dashboard', { replace: true });
-      } else {
-        setChecking(false);
-      }
+    let cancelled = false;
+    const timer = setTimeout(() => { if (!cancelled) setChecking(false); }, AUTH_TIMEOUT_MS);
+    const unsub = onAuthStateChanged(auth, async user => {
+      const ok = await isAdminUser(user);
+      if (cancelled) return;
+      if (ok) navigate(destination, { replace: true });
+      else setChecking(false);
     });
-    return () => unsub();
-  }, [navigate]);
+    return () => { cancelled = true; clearTimeout(timer); unsub(); };
+  }, [navigate, destination]);
+
+  // Lockout countdown
+  useEffect(() => {
+    if (lockSecs <= 0) return undefined;
+    const t = setInterval(() => setLockSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [lockSecs > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = async e => {
     e.preventDefault();
+    if (submittingRef.current) return;
     setError('');
+
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !password) { setError('Please enter your email and password.'); return; }
+
+    const lock = checkLockout(trimmed);
+    if (lock.locked) {
+      setLockSecs(lock.secondsLeft);
+      setError(`Too many failed attempts. Please wait ${Math.ceil(lock.secondsLeft / 60)} minute(s).`);
+      return;
+    }
+
+    submittingRef.current = true;
     setLoading(true);
-
     try {
-      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const credential = await signInWithEmailAndPassword(auth, trimmed, password);
+      clearAttemptData(trimmed);
 
-      // Deny anyone who is not the configured admin email
-      if (!ADMIN_EMAIL || credential.user.email !== ADMIN_EMAIL) {
-        await signOut(auth);
+      // Deny anyone who is not the configured admin
+      const ok = await isAdminUser(credential.user);
+      if (!ok) {
+        try { await signOut(auth); } catch (_) { /* nothing more we can do */ }
         setError('Access denied. Admin credentials required.');
-        setLoading(false);
-        return;
       }
-
-      navigate('/admin/dashboard');
+      // On success the onAuthStateChanged listener above performs the redirect.
     } catch (err) {
-      const credentialError =
-        err.code === 'auth/wrong-password'     ||
-        err.code === 'auth/user-not-found'     ||
-        err.code === 'auth/invalid-credential' ||
-        err.code === 'auth/invalid-email';
-
-      setError(credentialError ? 'Invalid email or password.' : 'Login failed. Please try again.');
+      const code = err?.code;
+      if (CREDENTIAL_ERROR_CODES.includes(code)) {
+        const r = recordFailedAttempt(trimmed);
+        if (r.locked) {
+          setLockSecs(Math.ceil((r.lockedUntil - Date.now()) / 1000));
+          setError('Too many failed attempts. Account locked for 15 minutes.');
+        } else {
+          setError(`Invalid email or password. ${r.attemptsLeft} attempt${r.attemptsLeft !== 1 ? 's' : ''} remaining.`);
+        }
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a few minutes and try again.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection and try again.');
+      } else {
+        setError('Login failed. Please try again.');
+      }
+    } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen min-h-dvh bg-black flex items-center justify-center" role="status" aria-label="Checking sign-in">
         <div className="w-10 h-10 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
+  const isLocked = lockSecs > 0;
+
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="min-h-screen min-h-dvh bg-black text-white flex flex-col pt-safe">
 
       <div className="px-4 pt-4">
         <button
+          type="button"
           onClick={() => navigate('/')}
           aria-label="Back to home"
-          className={`flex items-center gap-2 text-gray-500 hover:text-white transition text-sm ${ring} rounded`}
+          className={`flex items-center gap-2 text-gray-500 hover:text-white transition text-sm px-2 py-2 -ml-2 ${ring} rounded`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -95,7 +137,7 @@ export default function AdminLogin() {
         </button>
       </div>
 
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
+      <main className="flex-1 flex items-center justify-center px-4 py-12 pb-safe">
         <div className="w-full max-w-sm">
 
           <div className="text-center mb-8">
@@ -106,17 +148,7 @@ export default function AdminLogin() {
             <p className="text-gray-500 text-sm mt-1">Authorised access only</p>
           </div>
 
-          {!ADMIN_EMAIL && (
-            <div role="status" className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm rounded-xl px-4 py-3 mb-4">
-              <p className="font-bold mb-0.5">Setup required</p>
-              <p className="text-xs text-yellow-300/80">
-                Add <code className="bg-yellow-400/10 px-1 rounded">REACT_APP_ADMIN_EMAIL</code> to your{' '}
-                <code className="bg-yellow-400/10 px-1 rounded">.env.local</code> file and restart the dev server.
-              </p>
-            </div>
-          )}
-
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-6">
             <form onSubmit={handleLogin} noValidate className="space-y-4">
 
               {/* Live region for auth feedback */}
@@ -141,8 +173,9 @@ export default function AdminLogin() {
                   placeholder="admin@ridex.com"
                   autoComplete="email"
                   maxLength={254}
-                  className={`w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-white text-sm
-                    focus:outline-none focus:border-yellow-400 transition ${ring}`}
+                  disabled={isLocked}
+                  className={`w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-white text-base
+                    focus:outline-none focus:border-yellow-400 transition disabled:opacity-50 ${ring}`}
                 />
               </div>
 
@@ -160,14 +193,15 @@ export default function AdminLogin() {
                     placeholder="••••••••"
                     autoComplete="current-password"
                     maxLength={128}
-                    className={`w-full bg-black border border-gray-800 rounded-xl px-4 py-3 pr-11 text-white text-sm
-                      focus:outline-none focus:border-yellow-400 transition ${ring}`}
+                    disabled={isLocked}
+                    className={`w-full bg-black border border-gray-800 rounded-xl px-4 py-3 pr-12 text-white text-base
+                      focus:outline-none focus:border-yellow-400 transition disabled:opacity-50 ${ring}`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPw(v => !v)}
                     aria-label={showPw ? 'Hide password' : 'Show password'}
-                    className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
+                    className={`absolute right-1 top-1/2 -translate-y-1/2 p-2.5 text-gray-500 hover:text-gray-300 transition ${ring} rounded`}
                   >
                     <EyeIcon open={showPw} />
                   </button>
@@ -176,7 +210,7 @@ export default function AdminLogin() {
 
               <button
                 type="submit"
-                disabled={loading || !ADMIN_EMAIL}
+                disabled={loading || isLocked}
                 className={`w-full py-3.5 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition
                   disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${ring} ${ringOffset}`}
               >
@@ -188,7 +222,7 @@ export default function AdminLogin() {
                     </svg>
                     Signing in…
                   </>
-                ) : 'Sign In'}
+                ) : isLocked ? `Locked (${Math.ceil(lockSecs / 60)} min)` : 'Sign In'}
               </button>
             </form>
           </div>

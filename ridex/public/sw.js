@@ -47,9 +47,11 @@ self.addEventListener('notificationclick', (event) => {
 // Strategy:
 //   /static/**  → cache-first  (JS/CSS bundles have content-hash names; safe to cache indefinitely)
 //   navigate    → network-first with cache fallback (ensures fresh HTML for SPA routing)
-//   everything else → network-only
+//   everything else (incl. Mapbox / Firebase / Stripe) → network-only
+//
+// Bumping CACHE_NAME purges every older cache on activate.
 
-const CACHE_NAME    = 'ridex-v2';
+const CACHE_NAME    = 'ridex-v3';
 const STATIC_PREFIX = '/static/';
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -65,10 +67,8 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Only handle same-origin or OSM tile requests; let everything else pass through.
-  if (url.origin !== self.location.origin && !url.hostname.endsWith('openstreetmap.org')) {
-    return;
-  }
+  // Only handle same-origin GET requests; let everything else pass through.
+  if (url.origin !== self.location.origin || request.method !== 'GET') return;
 
   // Cache-first for hashed static assets (/static/js/*.chunk.js, /static/css/*.chunk.css)
   if (url.pathname.startsWith(STATIC_PREFIX)) {
@@ -84,27 +84,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for navigation (HTML) — keep the SPA shell fresh.
+  // Network-first for navigation (HTML) — keep the SPA shell fresh, fall back
+  // to the last cached shell when offline so the app can at least render.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.open(CACHE_NAME).then((cache) => cache.match('/index.html'))
-      )
-    );
-    return;
-  }
-
-  // OSM map tiles — stale-while-revalidate (tiles rarely change, bandwidth matters on mobile)
-  if (url.hostname.endsWith('openstreetmap.org')) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-        const networkFetch = fetch(request).then((response) => {
-          if (response.ok) cache.put(request, response.clone());
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', response.clone())).catch(() => {});
+          }
           return response;
-        });
-        return cached || networkFetch;
-      })
+        })
+        .catch(() => caches.open(CACHE_NAME).then((cache) => cache.match('/index.html')))
     );
   }
 });

@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────
 // KPI stat card — primary accent (earnings) vs neutral
+// Values truncate instead of overflowing the card on narrow phones.
 // ─────────────────────────────────────────────
 export default function StatCard({ label, value, children, sub, accent = false, large = false }) {
   return (
@@ -8,9 +9,12 @@ export default function StatCard({ label, value, children, sub, accent = false, 
         ? 'bg-yellow-400/5 border border-yellow-400/25'
         : 'bg-gray-900 border border-gray-800'
       }`}>
-      <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-500 leading-none">{label}</p>
+      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500 leading-none">{label}</p>
       {children ?? (
-        <p className={`font-black leading-tight ${large ? 'text-3xl' : 'text-xl'} ${accent ? 'text-yellow-400' : 'text-white'}`}>
+        <p
+          title={typeof value === 'string' ? value : undefined}
+          className={`font-black leading-tight truncate tabular-nums ${large ? 'text-2xl sm:text-3xl' : 'text-lg sm:text-xl'} ${accent ? 'text-yellow-400' : 'text-white'}`}
+        >
           {value}
         </p>
       )}
